@@ -15,7 +15,7 @@
     "lint:check": "npm run lint:check --workspace mobile",
     "format": "npm run format --workspace mobile",
     "format:check": "npm run format:check --workspace mobile",
-    "typecheck": "tsc --noEmit --workspace mobile"
+    "typecheck": "npm run typecheck --workspace mobile"
   },
   "engines": {
     "node": ">=20"

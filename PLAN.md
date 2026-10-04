@@ -1,6 +1,7 @@
 # SOLGOTCHI V1 — BUILD PLAN
 
-**Status:** plan locked, awaiting green light for **P0**
+**Status:** **P0 complete** (P0.13 spike deferred to P4 per ADR-006). Awaiting green light for **P1**.
+**Last verified:** `tsc --noEmit` pass · `expo lint` pass · `prettier --check` pass · Metro dev server boots and serves bundles
 **Contract:** `SOLGOTCHI_PRODUCT (1).md` (4036 lines) — spec wins on every conflict
 **Art direction:** `SOLGOTCHI Neon Companion App Board.png`
 **Design base:** `design/DESIGN.md` (Spotify-derived) — *to be written in P0*
@@ -159,8 +160,17 @@ https://github.com/solana-mobile/solana-mobile-docs/blob/main/solana-mobile-stac
 | 7 | Privy App ID + Client ID | P1 | ⬜ (you can get) |
 | 8 | Seeker device **or** emulator + Mock MWA wallet | P1 | ⬜ |
 | 9 | Game economy numbers — approve/adjust (`swapXpBase`, caps, decay, evolution thresholds) | P2 | ⬜ |
-| 10 | Mint approach — **spike decides**, per your call | P0 spike → P4 | ⬜ deferred |
-| 11 | Payer keypair path + cluster (devnet first) | P4 | ✅ you have |
+| 10 | Mint approach — **spike decides**, per your call | P4 | ⬜ deferred to P4 |
+| 11 | Payer keypair + devnet cluster | P4 | ✅ verified — see below |
+
+### Devnet payer keypairs (checked, addresses only — never commit keyfile contents)
+
+| Path | Address | Balance |
+|---|---|---|
+| `~/.config/solana/id.json` | `DztJxBybR7fKa9UyR8fBZMohaZYcLydyxrJr5CuJBa34` | 40.52 SOL |
+| `~/.config/solana/id2.json` | `Eu8xBNBA1kpvAK6HXSmQRnrbfSvsBUCNWhcn4nSWBGVg` | 6.34 SOL |
+
+CLI `solana 3.1.15`, cluster devnet. Recommended mint payer: `id.json` (larger buffer).
 | 12 | GLB character (you're sourcing) | P5 | ✅ your timing |
 | 13 | Helius API key | P7 | ⬜ (you can get) |
 | 14 | Firebase project for FCM — **or** local-notifications-only for V1 | P8 | ⬜ |
@@ -496,8 +506,8 @@ Format: **Goal / Accept** · **Work** · **Read** · **Skills** · **Need** · *
 
 | # | Question | Default if no answer |
 |---|---|---|
-| 1 | `git init` — bare local, or a remote URL? | local, `.gitignore`'d properly |
-| 2 | Bundle id + display name? | block P0 until answered (cannot ship `com.anonymous.kit_expo_privy`) |
+| 1 | `git init` — done, local. Remote not yet added. | — |
+| 2 | Bundle id — `com.gochi.app` placeholder set | **must** become a real reverse-domain id before P14 (ADR-010) |
 | 3 | FCM (Firebase) or local notifications for V1? | local notifications, FCM deferred to P13+ |
 | 4 | Economy numbers approved as spec'd? | use spec defaults, flag in `decisions.md` as unratified |
 

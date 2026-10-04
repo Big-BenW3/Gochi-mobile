@@ -9,13 +9,14 @@
     "doctor": "npx -y expo-doctor@latest",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
     "ios": "expo run:ios",
     "lint": "expo lint --fix",
     "lint:check": "expo lint",
     "start": "expo start",
     "web": "expo start --web"
   },
-"displayName": "Gochi",
+  "displayName": "Gochi",
   "description": "Gochi — a persistent cyber companion whose state, personality and progression are driven by real Solana activity.",
   "usecase": "Mobile",
   "keywords": [
@@ -58,6 +59,9 @@
   "main": "./index.js",
   "version": "1.0.0",
   "dependencies": {
+    "@expo-google-fonts/jetbrains-mono": "^0.4.1",
+    "@expo-google-fonts/manrope": "^0.4.2",
+    "@expo-google-fonts/space-grotesk": "^0.4.1",
     "@expo/metro-runtime": "~55.0.6",
     "@privy-io/expo": "^0.65.5",
     "@privy-io/expo-native-extensions": "^0.0.11",

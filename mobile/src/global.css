@@ -4,3 +4,83 @@
 @import 'heroui-native/styles';
 
 @source '../node_modules/heroui-native/lib';
+
+/* ==========================================================================
+   GOCHI DESIGN TOKENS
+   --------------------------------------------------------------------------
+   Source of truth for colour. These become Tailwind utilities, so
+   `bg-ink-900`, `text-fog-200`, `border-hairline` etc. work in className.
+
+   Design base: Spotify's "content-first darkness" (see design/DESIGN.md).
+   The UI recedes into near-black so the companion is the only thing that
+   glows. Rule of thumb when adding a colour here: if it is not load-bearing
+   for a state in tokens.ts, it does not belong.
+
+   Mirrored for programmatic use (shadows, gradients, WebView backgrounds) in
+   src/theme/tokens.ts — keep the two in sync.
+   ========================================================================== */
+
+@theme {
+  /* ---------------------------------------------------------------------
+     Neutrals — violet-tinted blacks.
+     Six steps is deliberate: dark UIs need real elevation range for cards,
+     sheets and overlays, otherwise everything flattens into one blob.
+     --------------------------------------------------------------------- */
+  --color-ink-950: #05060d; /* app background, deepest */
+  --color-ink-900: #0a0c16; /* screen background */
+  --color-ink-850: #111426; /* card surface */
+  --color-ink-800: #1a1e33; /* raised surface, pressed states */
+  --color-ink-700: #262b44; /* strong border, track */
+  --color-ink-600: #343b58; /* highest neutral */
+
+  /* Text ramp. Never pure white — it glares against near-black. */
+  --color-fog-50: #edeff9; /* headings, primary text */
+  --color-fog-200: #a8b0cc; /* body, secondary text */
+  --color-fog-400: #666e8f; /* tertiary text, disabled, TIRED */
+  --color-fog-600: #343b58; /* faintest text */
+
+  /* ---------------------------------------------------------------------
+     Brand + semantic roles.
+     ONE primary, ONE interactive, and four states that each have exactly one
+     job. This is the fix for the original palette's core problem: four
+     equally-weighted neons, so nothing led the eye.
+     --------------------------------------------------------------------- */
+  --color-primary: #7a6bff; /* aura, brand, HEALTHY */
+  --color-primary-lit: #a99bff; /* ENERGIZED, glow highlights */
+  --color-signal: #31d6ff; /* interactive, links, ALERT */
+
+  --color-damage: #ff5b6e; /* DAMAGED — the only red, used sparingly */
+  --color-recover: #3ddc97; /* RECOVERING, positive confirmations */
+  --color-evolve: #ff6edb; /* EVOLVING only — pink gets one rare job */
+  --color-reward: #ffc24b; /* XP, level-up, achievements. NEVER a condition */
+
+  /* Hairlines. Alpha rather than solid, so borders sit *under* the glow
+     instead of cutting across it. */
+  --color-hairline: rgba(237, 239, 249, 0.08);
+  --color-hairline-strong: rgba(237, 239, 249, 0.16);
+
+  /* ---------------------------------------------------------------------
+     Type. Substituted for Spotify's proprietary CircularSp — see
+     design/DESIGN.md for why SF Pro and Circular are both unusable here.
+
+     Each weight is its own family because React Native matches a typeface by
+     exact family string and will not fall back to the nearest registered
+     weight the way CSS does. These strings must match `fontFamily` in
+     src/theme/fonts.ts exactly, since that is what expo-font registers.
+     --------------------------------------------------------------------- */
+  --font-display: 'SpaceGrotesk-Bold';
+  --font-display-medium: 'SpaceGrotesk-Medium';
+  --font-body: 'Manrope-Regular';
+  --font-body-strong: 'Manrope-SemiBold';
+  --font-mono: 'JetBrainsMono-Medium';
+  --font-mono-bold: 'JetBrainsMono-Bold';
+
+  /* ---------------------------------------------------------------------
+     Radii. Spotify's pill-and-circle geometry: primary controls are fully
+     rounded, cards are softly rounded, pills are fully rounded.
+     --------------------------------------------------------------------- */
+  --radius-card: 20px;
+  --radius-control: 16px;
+  --radius-chip: 12px;
+  --radius-pill: 999px;
+}

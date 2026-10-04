@@ -1,0 +1,29 @@
+{
+  "name": "@gochi/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Gochi backend. Authoritative for companion state, progression, activity ingestion and notifications.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "migrate": "drizzle-kit migrate",
+    "migrate:generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "@gochi/contracts": "*",
+    "drizzle-orm": "^0.38.3",
+    "hono": "^4.6.14",
+    "jose": "^5.9.6",
+    "postgres": "^3.4.5",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "drizzle-kit": "^0.30.1",
+    "tsx": "^4.19.2",
+    "typescript": "~5.9.2"
+  }
+}
