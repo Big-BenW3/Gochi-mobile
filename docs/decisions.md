@@ -87,7 +87,7 @@ keeping the FAB navigation model intact. The board's tabs become FAB sub-actions
 
 Two further board inconsistencies were found and also resolved in the spec's favour:
 
-- The board's asset panel recommends *Unity / Flutter 3D*, predating ADR-001.
+- The board's asset panel recommends _Unity / Flutter 3D_, predating ADR-001.
 - The board's home screen shows a **Health** stat; spec §5.1 has no Health variable.
   The real set is Energy, Shield Health, Shield Durability, Combat Rating and Aura.
 
@@ -182,19 +182,35 @@ orientation are not an accessibility exemption.
 
 ---
 
-## ADR-010 — Bundle id is a placeholder
+## ADR-010 — Bundle id is `com.gochi.app`
 
-**Status:** Provisional — must be settled before P14 · **Date:** 2026-10-04
+**Status:** Accepted for development · **Date:** 2026-10-04
 
 **Context.** The scaffold shipped `com.anonymous.kit_expo_privy`, which cannot be
-published.
+published. A second problem surfaced at the start of P1: `mobile/android/` is
+generated and gitignored, so the copy on disk had been prebuilt before the rename
+and still carried the old id. `app.json` said `com.gochi.app` while
+`android/app/build.gradle` said `com.anonymous.kit_expo_privy`. Nothing complained,
+because prebuild does not overwrite an existing native directory — the mismatch
+would have surfaced only at runtime, as a Privy rejection.
 
-**Decision.** Use `com.gochi.app` and the scheme `gochi` for development.
+Privy makes this fail loudly rather than silently: it compares the calling app's
+package name against the client identifier configured in its dashboard, and refuses
+the login when they disagree. So the identifier had to be settled before P1 rather
+than deferred to release.
 
-**Consequences.** This must become a real reverse-domain identifier controlled by the
-user before any store submission — changing it later alters the Android application
-id and the MWA deep link, so it is cheaper to settle now. **Blocking for release, not
-for development.**
+**Decision.** `com.gochi.app`, scheme `gochi`, label `Gochi`. The user confirmed
+this matches the identifier registered in the Privy dashboard.
+
+**Consequences.** `app.json` is the single source of truth; `android/` is
+disposable output. Any change to the package id requires
+`npx expo prebuild -p android --clean --no-install` and then a rebuild — a Metro
+reload is not enough, because the application id is compiled into the APK.
+
+This is still not a publishable id. `com.gochi.app` is not a reverse-domain name
+the user controls, and store submission needs one. Changing it later alters both
+the Android application id and the MWA deep link, so it is cheaper to settle now
+than at P14. **Blocking for release, not for development.**
 
 ---
 
@@ -228,6 +244,48 @@ contract is not yet built are **absent, not stubbed with fake data**.
 primitives stay reusable. Landing phase: FAB P6, ActivityCard P7, NotificationRow P8,
 CompanionCard and the 3D views P5, AchievementBadge and StateTimelineItem P9.
 
-Shared vocabulary that *is* needed up front — the eight conditions — lives in
+Shared vocabulary that _is_ needed up front — the eight conditions — lives in
 `src/domain/companion/conditions.ts`, below the UI layer, so `ConditionBadge` can stay
 a primitive while still being unable to disagree with the state it shows.
+
+---
+
+## ADR-013 — The API refuses to start on a misconfigured environment
+
+**Status:** Accepted · **Date:** 2026-10-04
+
+**Context.** The mobile app and the API both read one `.env` at the repo root,
+because Expo only exposes env vars to the app from the app's own directory, and
+splitting the file would mean maintaining two. That puts the Privy App Secret and
+the Neon URLs in the same file as the public Privy identifiers.
+
+The specific hazard: Expo inlines any variable prefixed `EXPO_PUBLIC_` into the app
+bundle at build time. A server secret named that way is not merely misplaced, it is
+published — readable by anyone who unpacks the APK. It is also a quiet failure,
+because nothing errors at build time.
+
+**Decision.** `apps/api/src/env.ts` validates at startup rather than per request,
+and enforces two invariants:
+
+1. Every required variable (`DATABASE_URL`, `API_JWT_SECRET`,
+   `EXPO_PRIVATE_PRIVY_APP_SECRET`) is present. Missing ones are collected and
+   reported together, so a misconfigured deploy is one edit rather than a loop of
+   500s.
+2. No `EXPO_PUBLIC_`-prefixed variable may look like a secret — matching
+   `SECRET`, `PRIVATE`, `KEYPAIR`, `PASSWORD` or `TOKEN`. The process refuses to
+   start, on the grounds that by the time the API can see it, it is already
+   shipped.
+
+The Privy App Secret lives under `EXPO_PRIVATE_PRIVY_APP_SECRET`. The `EXPO_`
+prefix groups it with its sibling credentials; `PRIVATE_` marks it server-side,
+since Expo's bundler inlines only `EXPO_PUBLIC_` and leaves the rest in the
+server's environment.
+
+**Consequences.** Startup failures are loud and named rather than deferred to the
+first request that happens to need the variable. Real environment variables take
+precedence over the file, so a deployed container injects secrets at runtime and
+still uses the same `.env` for local work. The leak guard is a heuristic on names,
+not a scanner: it cannot catch a secret stored under an innocuous name, so it
+complements rather than replaces care about what gets prefixed.
+
+---

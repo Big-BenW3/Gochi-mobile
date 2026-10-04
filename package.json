@@ -3,18 +3,25 @@
   "version": "0.1.0",
   "private": true,
   "description": "Gochi — a persistent cyber companion on Solana Mobile whose state, personality and progression are driven by real onchain activity.",
-  "workspaces": ["mobile", "apps/*", "packages/*"],
+  "workspaces": [
+    "mobile",
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "android": "npm run android --workspace mobile",
     "android:build": "npm run android:build --workspace mobile",
-    "start": "npm run start --workspace mobile",
+    "api": "npm run start --workspace @gochi/api",
+    "api:dev": "npm run dev --workspace @gochi/api",
+    "api:typecheck": "npm run typecheck --workspace @gochi/api",
+    "ci": "npm run ci --workspace mobile",
     "dev": "npm run dev --workspace mobile",
     "doctor": "npm run doctor --workspace mobile",
-    "ci": "npm run ci --workspace mobile",
-    "lint": "npm run lint --workspace mobile",
-    "lint:check": "npm run lint:check --workspace mobile",
     "format": "npm run format --workspace mobile",
     "format:check": "npm run format:check --workspace mobile",
+    "lint": "npm run lint --workspace mobile",
+    "lint:check": "npm run lint:check --workspace mobile",
+    "start": "npm run start --workspace mobile",
     "typecheck": "npm run typecheck --workspace mobile"
   },
   "engines": {
