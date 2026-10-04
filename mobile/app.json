@@ -1,0 +1,16 @@
+{
+  "expo": {
+    "scheme": "gochi",
+    "userInterfaceStyle": "dark",
+    "orientation": "portrait",
+    "web": {
+      "output": "static"
+    },
+    "name": "Gochi",
+    "slug": "gochi",
+    "android": {
+      "package": "com.gochi.app"
+    },
+    "plugins": ["expo-router", "expo-secure-store", "expo-web-browser"]
+  }
+}

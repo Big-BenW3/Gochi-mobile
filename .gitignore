@@ -1,0 +1,69 @@
+# ---------------------------------------------------------------------------
+# Gochi — monorepo root
+# Per-package .gitignore files (e.g. mobile/.gitignore) still apply.
+# ---------------------------------------------------------------------------
+
+# dependencies
+node_modules/
+
+# Expo / Metro
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+*.tsbuildinfo
+
+# Native build output. The generated android/ and ios/ folders themselves are
+# ignored per-package, because they are recreated by `expo prebuild`.
+android/build/
+android/app/build/
+android/.gradle/
+android/local.properties
+ios/Pods/
+
+# environment / secrets — never commit these
+.env
+.env*.local
+
+# keystores and signing material
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# debug logs
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# OS noise
+.DS_Store
+*.pem
+
+# coverage + test output
+coverage/
+
+# AI agent skill fan-out. `.agents/` holds the real skill content and is kept;
+# the per-agent symlink directories were removed as redundant.
+.aider-desk/
+.augment/
+.autohand/
+.cortex/
+.devin/
+.goose/
+.grok/
+.hermes/
+.inferencesh/
+.jazz/
+.junie/
+.kiro/
+.minimax/
+.pi/
+.qoder/
+.qwen/
+.tabnine/
+.vibe/
+.windsurf/
+.zcode/
