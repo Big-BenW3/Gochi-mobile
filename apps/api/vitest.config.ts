@@ -14,8 +14,16 @@ export default defineConfig({
     // Top-level in Vitest 4+; the old nested `poolOptions` form was removed.
     pool: "forks",
     maxWorkers: 1,
-    // Mainnet RPC calls are slow and occasionally rate-limited.
-    testTimeout: 30_000,
-    hookTimeout: 30_000,
+    /**
+     * Generous, because these are integration tests over a real network.
+     *
+     * Each transaction is a round trip to Neon, so a case that ingests fifteen
+     * events takes tens of seconds. The earlier 30s produced a timeout that read
+     * as a failure while the behaviour under test was fine — and a timeout is a
+     * poor thing to leave ambiguous, because it is indistinguishable from a
+     * deadlock.
+     */
+    testTimeout: 120_000,
+    hookTimeout: 120_000,
   },
 });

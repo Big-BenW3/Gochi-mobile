@@ -20,7 +20,7 @@
  * cannot deduplicate. That is what this module is for.
  */
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, gte, isNotNull, sql } from "drizzle-orm";
 
 import { logger } from "../core/logging.js";
 import { closeDb, getDb } from "../db/client.js";
@@ -74,13 +74,31 @@ function toEngineState(row: Companion, now: Date): CompanionState {
 }
 
 /**
+ * A handle that can run queries, whether inside a transaction or not.
+ *
+ * Drizzle's transaction object and the database handle expose the same query
+ * builder, so the helpers below accept either.
+ */
+type Queryable = Pick<
+  ReturnType<typeof getDb>,
+  "select" | "insert" | "update" | "delete"
+>;
+
+/**
  * XP already awarded today, by class.
  *
  * Read from the event log rather than a counter column, because a counter can
  * drift from the events it was meant to summarise and a drifted cap silently
  * awards too much. Recomputing is a cheap indexed aggregate and is exact.
+ *
+ * Takes the caller's handle rather than calling `getDb()` itself. Inside a
+ * transaction that would be a different connection: the pooled client is capped
+ * at one connection, which the transaction already holds, so the query would wait
+ * for a connection that cannot be released until the query finishes. That
+ * deadlocks rather than failing, which is why it presents as a timeout.
  */
 async function dailyXpTotals(
+  db: Queryable,
   userId: string,
   now: Date,
 ): Promise<{ swap: number; stake: number; other: number; swapCount: number }> {
@@ -88,7 +106,7 @@ async function dailyXpTotals(
     Math.floor(now.getTime() / 86_400_000) * 86_400_000,
   );
 
-  const rows = await getDb()
+  const rows = await db
     .select({
       eventType: activityEvents.eventType,
       payload: activityEvents.payload,
@@ -97,8 +115,11 @@ async function dailyXpTotals(
     .where(
       and(
         eq(activityEvents.userId, userId),
-        sql`${activityEvents.occurredAt} >= ${dayStart}`,
-        sql`${activityEvents.processedAt} is not null`,
+        // drizzle's operators rather than a raw `sql` fragment: an interpolated
+        // fragment sends a Date as a query *parameter* of unknown type, which
+        // postgres.js cannot encode. `gte` and `isNotNull` keep the value typed.
+        gte(activityEvents.occurredAt, dayStart),
+        isNotNull(activityEvents.processedAt),
       ),
     );
 
@@ -202,7 +223,7 @@ export async function ingestEvent(params: {
       const row = companion[0];
 
       // --- 3. Run the engine. --------------------------------------------
-      const totals = await dailyXpTotals(userId, now);
+      const totals = await dailyXpTotals(tx, userId, now);
       const state: CompanionState = {
         ...toEngineState(row, now),
         dailyXp: {
