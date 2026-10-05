@@ -289,3 +289,60 @@ not a scanner: it cannot catch a secret stored under an innocuous name, so it
 complements rather than replaces care about what gets prefixed.
 
 ---
+
+---
+
+## ADR-014 — Server-side minting, and what we do not claim about it
+
+**Status:** Accepted · **Date:** 2026-10-05 · **Spec:** §10, §31, §32
+
+**Context.** Spec section 32.1's flow ends with a Core Asset whose owner is the
+user. Section 32.2 allows an application-funded payer, or otherwise requires
+clearly explaining the wallet transaction. ADR-006 recorded this as provisional and
+deferred the decision to P4; this is that decision, taken with a working
+implementation rather than on paper.
+
+The alternative is client-side signing through MWA: build a transaction on a phone,
+bridge it to the legacy format Metaplex needs, and ask the user to approve
+something they did not initiate. That is a worse product and more code.
+
+**Decision.** The backend signs and pays. `asset.owner` is set to the _user's_
+wallet, validated rather than defaulted — defaulting it to the payer would mint
+every companion into the payer's wallet, and the failure would not surface until
+someone tried to trade the asset.
+
+Verified on devnet with a real transaction, not a dry run: asset
+`4cPViCJRm1kN1y67Jth6pVsMC44emFwuCKqye2bfQgB4`, owned by the expected wallet,
+rent-exempt, cost **0.00273952 SOL** — close to the ~0.003 figure section 32.2
+cites, which is why that payer balance matters.
+
+Three claims we deliberately do not make:
+
+1. **Not "free".** Section 32.2 forbids calling a transaction free when the user
+   pays network fees. We pay, so the honest statement is that _we_ did — not that
+   the user saved something, which would still be a claim about their wallet.
+   `describeFunding()` is the single place that decides, so UI copy cannot drift
+   from the funding model.
+2. **Not "soulbound".** Sections 32.2 and 10.3 permit that word only when a
+   transfer plugin is genuinely enforced. A Core mint carries a freeze authority so
+   the holder cannot move the token, but that is not protocol-level
+   non-transferability. `transferPolicy()` reports what is true — frozen against
+   transfer by the holder, transferable by the authority — and returns
+   `soulbound: false`.
+3. **No user approval prompt.** Because the backend pays and signs, the user is
+   not asked to sign anything, and the UI must not imply they were.
+
+**Consequences.** The payer keypair lives on the server and only the mint module
+reads it; it is loaded lazily so the API runs without one configured, because
+identity, the engine and every read route must work on a machine that has no
+funded devnet key. Its address is logged, because that is the first thing to check
+when a mint fails; its bytes never are.
+
+Umi 1.6 ships a bare RPC layer: there is no `solana()` or `solanaIdentity()` in
+`@metaplex-foundation/umi` for this major, and no separate Solana plugin package
+exists. The working composition is `web3JsRpc` + `web3JsEddsa` +
+`web3JsTransactionFactory` + `defaultProgramRepository` + `keypairIdentity`.
+Omitting the transaction factory or the program repository does not fail at
+construction — it fails at send time with an error about a missing _interface_,
+which points nowhere near the cause. All four are therefore spelled out, with the
+reason, rather than pulled from a defaults bundle.

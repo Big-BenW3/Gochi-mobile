@@ -154,7 +154,17 @@ export const env = {
   /** Helius dashboard key. Required from P7, when activity ingestion begins. */
   heliusApiKey: optional("HELIUS_API_KEY"),
 
-  /** Path to the Solana keypair that pays for companion mints. Required from P4. */
+  /**
+   * Path to the Solana keypair that pays for companion mints. Required from P4.
+   *
+   * Read lazily and validated at the point of use rather than at startup, because
+   * the API must run with no payer configured for identity, the engine and every
+   * read route. Making it a required variable would mean a developer without a
+   * funded devnet keypair could not run the tests at all, and the failure would
+   * arrive at boot rather than at the one route that needs it.
+   *
+   * The file is never read into anything but the mint module, and never logged.
+   */
   payerKeypairPath: optional("PAYER_KEYPAIR_PATH"),
 
   /** Solana JSON RPC endpoint. */
