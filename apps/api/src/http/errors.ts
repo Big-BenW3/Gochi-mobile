@@ -26,6 +26,7 @@ const STATUS_BY_CODE: Record<ApiErrorCode, number> = {
   genesis_not_detected: 200,
   verification_unavailable: 503,
   invalid_request: 400,
+  mint_unavailable: 503,
   rate_limited: 429,
   idempotent_replay: 409,
   internal_error: 500,
@@ -56,6 +57,8 @@ const MESSAGE_BY_CODE: Record<ApiErrorCode, string> = {
     "We could not verify your Seeker identity right now.",
 
   invalid_request: "That request could not be processed.",
+  mint_unavailable:
+    "We could not create your companion right now. Please try again shortly.",
   rate_limited: "Too many requests. Please try again shortly.",
   idempotent_replay: "That request was already processed.",
   internal_error: "Something went wrong. Please try again.",

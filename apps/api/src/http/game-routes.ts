@@ -55,6 +55,7 @@ import { ApiError, toApiError } from "./errors.js";
 import type { AppEnv } from "./middleware.js";
 import {
   idempotencyKey,
+  oncePerRequest,
   readRateLimit,
   requireSession,
   withConfig,
@@ -66,7 +67,7 @@ export const gameRoutes = new Hono<AppEnv>();
 
 /** Applied to every route here: a session, the config, and a read limit. */
 gameRoutes.use("*", requireSession, withConfig, readRateLimit);
-gameRoutes.use("*", idempotencyKey);
+gameRoutes.use("*", oncePerRequest(idempotencyKey));
 
 /** Widen the writes beyond the read allowance. */
 const isWrite = (c: { req: { method: string } }) =>

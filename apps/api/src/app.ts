@@ -19,6 +19,7 @@ import { logger } from "./core/logging.js";
 import { authRoutes, sessionRoutes } from "./http/identity-routes.js";
 import { ApiError } from "./http/errors.js";
 import { gameRoutes, metadataRoutes } from "./http/game-routes.js";
+import { companionRoutes } from "./http/companion-routes.js";
 
 export function createApp() {
   const app = new Hono();
@@ -53,6 +54,9 @@ export function createApp() {
   app.route("/v1/auth", authRoutes);
   // /v1/me and /v1/genesis from identity, then the ten §40 game-state routes.
   app.route("/v1", sessionRoutes);
+  // Mounted before gameRoutes: both answer /v1/companion, and Hono matches in
+  // registration order, so the creation route has to be seen first.
+  app.route("/v1/companion", companionRoutes);
   app.route("/v1", gameRoutes);
 
   // Unauthenticated: a Core metadata document is public on-chain by design, since

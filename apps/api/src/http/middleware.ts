@@ -30,6 +30,8 @@ export type AppEnv = {
     userId: string;
     sessionWallet: string | null;
     config: GameConfig;
+    /** Set once the idempotency guard has run for this request. */
+    idempotencyAlreadyChecked: boolean;
   };
 };
 
@@ -169,6 +171,28 @@ export const idempotencyKey: MiddlewareHandler<AppEnv> = async (c, next) => {
   seenKeys.set(identity, now);
   await next();
 };
+
+/**
+ * Run a sub-router's middleware exactly once per request.
+ *
+ * The companion and game-state routers both mount under /v1, and Hono applies the
+ * *first* matching router's middleware to every request below that prefix — so
+ * shared middleware ran twice per call. That is invisible for session and rate
+ * limiting, which are both idempotent by nature, but the idempotency guard treats
+ * its own second run as a replay and rejected every *first* attempt with a 409.
+ *
+ * Marking the context on the first run makes a duplicated invocation a no-op, which
+ * is what lets a guard that must not fire twice be mounted on several routers.
+ */
+export function oncePerRequest(
+  mw: MiddlewareHandler<AppEnv>,
+): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    if (c.get("idempotencyAlreadyChecked")) return next();
+    c.set("idempotencyAlreadyChecked", true);
+    return mw(c, next);
+  };
+}
 
 /** Reset the replay window. Test-only. */
 export function resetIdempotency(): void {

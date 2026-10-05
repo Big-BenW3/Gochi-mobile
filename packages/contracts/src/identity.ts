@@ -236,6 +236,14 @@ export const apiErrorCodeSchema = z.enum([
   "verification_unavailable",
   /** Request body failed schema validation. */
   "invalid_request",
+  /**
+   * Minting could not complete — no payer configured, or the transaction failed.
+   *
+   * Distinct from internal_error because the user can retry it, and distinct from
+   * a generic failure because section 32's flow ends with a persisted asset
+   * address: nothing has been persisted, so nothing is half-finished.
+   */
+  "mint_unavailable",
   /** Rate limited, per spec 38 rule 8. Carries a Retry-After header. */
   "rate_limited",
   /**
