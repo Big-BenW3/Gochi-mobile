@@ -21,4 +21,5 @@
  * maintaining definitions the engine may contradict.
  */
 
+export * from "./game.js";
 export * from "./identity.js";

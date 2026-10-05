@@ -88,6 +88,26 @@ export const siwsVerifyRequestSchema = z
 export type SiwsVerifyRequest = z.infer<typeof siwsVerifyRequestSchema>;
 
 /**
+ * The eight companion conditions from spec section 5.2.
+ *
+ * Declared here rather than in the API's engine config so both sides validate
+ * against one definition. Duplicating the enum would let the app render a
+ * condition string the server cannot produce, which fails silently as a blank
+ * badge rather than as a type error.
+ */
+export const conditionSchema = z.enum([
+  "HEALTHY",
+  "ENERGIZED",
+  "TIRED",
+  "ALERT",
+  "DAMAGED",
+  "RECOVERING",
+  "EVOLVING",
+  "SLEEPING",
+]);
+export type Condition = z.infer<typeof conditionSchema>;
+
+/**
  * The result of checking a wallet for a Seeker Genesis Token.
  *
  * Three states, not two, and the difference matters:
