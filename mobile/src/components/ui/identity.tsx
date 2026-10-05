@@ -92,6 +92,18 @@ export function SeekerIdentityChip({ name, isVerified }: { name: string | null |
 }
 
 /**
+ * Build a mainnet explorer URL for an address.
+ *
+ * Hard-coded to mainnet rather than derived from the app's cluster, because
+ * everything this links to — a wallet, its Seeker Genesis Token, its `.skr` name
+ * — exists only there. A devnet link would resolve to nothing, and a link that
+ * silently leads nowhere is worse than no link.
+ */
+export function explorerAddressUrl(address: string): string {
+  return `https://explorer.solana.com/address/${address}`
+}
+
+/**
  * An external explorer link.
  *
  * Opens in a confirmation rather than navigating straight away. A block

@@ -17,6 +17,15 @@
  * because a wallet signature should never sit in AsyncStorage.
  */
 
+import type {
+  GenesisResult,
+  SiwsPayload,
+  SiwsVerifyRequest,
+  SiwsVerifyResponse,
+  PrivyVerifyResponse,
+  User,
+} from '@gochi/contracts'
+
 import { logger, redact } from './logging'
 
 /** Base URL of the API. Public by design — it holds no secret. */
@@ -146,7 +155,40 @@ async function request<T>(path: string, { body, method = 'GET', query, signal }:
  * Declaring speculative shapes here would be guessing at the server.
  */
 export const api = {
-  me: () => request<unknown>('/v1/me'),
+  // --- Identity (P1) -------------------------------------------------------
+  /**
+   * Ask the server for a SIWS challenge.
+   *
+   * The payload comes wholly from the server: domain, chainId, nonce and expiry
+   * are all pinned there. A client-assembled challenge would carry
+   * attacker-chosen values into the signature check, which is the entire thing
+   * being prevented.
+   */
+  authNonce: (address: string) => request<SiwsPayload>('/v1/auth/nonce', { body: { address }, method: 'POST' }),
+
+  /**
+   * Exchange a signed challenge for a session token.
+   *
+   * Exactly four fields, and no `account` object. The server derives the
+   * verifying key from `address` itself; sending a public key alongside would
+   * let a throwaway keypair sign a message naming someone else's wallet.
+   */
+  authSiws: (proof: SiwsVerifyRequest) => request<SiwsVerifyResponse>('/v1/auth/siws', { body: proof, method: 'POST' }),
+
+  /** Exchange a Privy access token for a Gochi session. Carries no wallet. */
+  authPrivy: (accessToken: string) =>
+    request<PrivyVerifyResponse>('/v1/auth/privy', {
+      body: { accessToken },
+      method: 'POST',
+    }),
+
+  /** Attach a wallet to an account that signed in with Google (A07). */
+  authLink: (proof: SiwsVerifyRequest) => request<{ user: User }>('/v1/auth/link', { body: proof, method: 'POST' }),
+
+  /** Re-check a linked wallet for a Seeker Genesis Token. */
+  genesis: () => request<GenesisResult>('/v1/genesis'),
+
+  me: () => request<User>('/v1/me'),
   companion: () => request<unknown>('/v1/companion'),
 
   /** Ask the server to reconcile activity. Progression is applied server-side. */

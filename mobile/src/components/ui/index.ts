@@ -16,7 +16,7 @@
  */
 export { Button, PrimaryButton, SecondaryButton, TertiaryButton } from './button'
 export { ConditionBadge } from './condition-badge'
-export { ChipRow, ExplorerLink, SeekerIdentityChip, shortenAddress, WalletChip } from './identity'
+export { ChipRow, ExplorerLink, SeekerIdentityChip, explorerAddressUrl, shortenAddress, WalletChip } from './identity'
 export { LevelBadge, ProgressBar, StatRow, StatTile } from './stat'
 export { Card, EmptyState, ErrorState, LoadingState, OfflineBanner, Screen, TopBar } from './state'
 export { Text, typeScale } from './text'
