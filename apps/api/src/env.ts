@@ -59,7 +59,10 @@ loadEnvFile();
 
 /** A variable the API refuses to start without. */
 type RequiredVar =
-  "DATABASE_URL" | "API_JWT_SECRET" | "EXPO_PRIVATE_PRIVY_APP_SECRET";
+  | "DATABASE_URL"
+  | "API_JWT_SECRET"
+  | "EXPO_PRIVATE_PRIVY_APP_SECRET"
+  | "EXPO_PUBLIC_PRIVY_APP_ID";
 
 /**
  * Collect every problem before reporting, rather than failing on the first.
@@ -74,6 +77,7 @@ const missing = collectMissing([
   "DATABASE_URL",
   "API_JWT_SECRET",
   "EXPO_PRIVATE_PRIVY_APP_SECRET",
+  "EXPO_PUBLIC_PRIVY_APP_ID",
 ]);
 
 if (missing.length > 0) {
@@ -133,6 +137,16 @@ export const env = {
 
   /** Secret used to sign and verify session JWTs. */
   jwtSecret: required("API_JWT_SECRET"),
+
+  /**
+   * Privy App ID.
+   *
+   * A public identifier, so it keeps the `EXPO_PUBLIC_` prefix even server-side —
+   * it is the same value the app sends. The server needs it to pin the access
+   * token's audience, which is what stops a token minted for a different Privy
+   * app from authenticating here.
+   */
+  privyAppId: required("EXPO_PUBLIC_PRIVY_APP_ID"),
 
   /** Privy App Secret, for verifying the access token on the Privy auth path. */
   privyAppSecret: required("EXPO_PRIVATE_PRIVY_APP_SECRET"),

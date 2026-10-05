@@ -155,18 +155,25 @@ export const siwsVerifyResponseSchema = z.object({
 });
 export type SiwsVerifyResponse = z.infer<typeof siwsVerifyResponseSchema>;
 
-/** `POST /v1/auth/privy` request body. */
+/**
+ * `POST /v1/auth/privy` request body.
+ *
+ * The access token, and nothing else. There is deliberately no `address` field.
+ *
+ * A Privy access token proves who signed in with Google; it carries no linked
+ * accounts, so it cannot also prove which wallet that person controls. Accepting
+ * an address alongside it would be the same bug the Genesis skill warns about: a
+ * caller submits a real Seeker owner's address with their own valid Google
+ * session and is handed that owner's identity.
+ *
+ * The wallet arrives the honest way instead — spec 29.2 puts "Connect Seeker
+ * Wallet" after Google sign-in, so the user signs the SIWS challenge with that
+ * wallet and the address comes from the signature. That is A07.
+ */
 export const privyVerifyRequestSchema = z
   .object({
     /** Privy access token, obtained client-side. */
     accessToken: z.string().min(1),
-    /**
-     * The wallet the user authorised through Privy's embedded flow.
-     *
-     * Optional: a Google-only user reaches A07 before they have a wallet, and
-     * §29.2 puts wallet connection after Google sign-in.
-     */
-    address: solanaAddressSchema.optional(),
   })
   .strict();
 export type PrivyVerifyRequest = z.infer<typeof privyVerifyRequestSchema>;
