@@ -25,8 +25,10 @@
 
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   index,
+  integer,
   jsonb,
   pgTable,
   text,
@@ -204,6 +206,248 @@ export const walletLinks = pgTable(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// P2 — the game-state tables from spec section 23.
+// ---------------------------------------------------------------------------
+
+/**
+ * Companions — spec section 23.
+ *
+ * `version` is the optimistic-concurrency column. Every engine run compares the
+ * version it read against the version it writes, so two concurrent events cannot
+ * both derive a patch from the same snapshot and overwrite each other's work.
+ * Spec section 24.5 calls for replaying from the latest authoritative snapshot
+ * rather than blindly applying deltas twice; this is what makes that safe.
+ *
+ * `shieldHealth` is 0-100 and `shieldDurability` is 0-100 separately, because
+ * section 7.4 distinguishes immediate protection state from longer-term
+ * condition. Collapsing them would make "damaged" and "worn" indistinguishable.
+ */
+export const companions = pgTable(
+  'companions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+
+    name: text('name').notNull(),
+
+    level: integer('level').notNull().default(1),
+    xp: bigint('xp', { mode: 'number' }).notNull().default(0),
+
+    energy: integer('energy').notNull().default(100),
+    shieldHealth: integer('shield_health').notNull().default(100),
+    shieldDurability: integer('shield_durability').notNull().default(100),
+    combatRating: integer('combat_rating').notNull().default(0),
+    aura: integer('aura').notNull().default(0),
+
+    /** One of the eight conditions in spec section 5.2. */
+    condition: text('condition').notNull().default('HEALTHY'),
+    evolutionStage: integer('evolution_stage').notNull().default(1),
+
+    assetAddress: text('asset_address'),
+    metadataUri: text('metadata_uri'),
+
+    /**
+     * When energy was last decayed.
+     *
+     * Decay is 4 points per 24h, and the elapsed periods are computed from this
+     * rather than from a daily cron: a user who opens the app after three days
+     * should lose three periods' worth in one step, and a cron would have missed
+     * the days the app was not running.
+     */
+    lastDecayAt: timestamp('last_decay_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+
+    /** When the last staking bonus was applied, for once-per-cycle enforcement. */
+    lastStakingCycleAt: timestamp('last_staking_cycle_at', {
+      withTimezone: true,
+    }),
+
+    /** Section 41: the config version an event was processed under, for audit. */
+    configVersion: text('config_version').notNull(),
+
+    version: integer('version').notNull().default(0),
+
+    lastStateUpdate: timestamp('last_state_update', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    /**
+     * One companion per user. Spec section 29.3 says one wallet resolves to one
+     * companion, and the constraint is what enforces it rather than application
+     * code.
+     */
+    userIdx: uniqueIndex('companions_user_id_key').on(table.userId),
+    conditionIdx: index('companions_condition_idx').on(table.condition),
+  }),
+)
+
+/**
+ * Activity events — spec section 23.
+ *
+ * `idempotency_key` is UNIQUE, and that uniqueness *is* the replay protection.
+ * Section 24.4 defines the key as network + signature + event_type, so a webhook
+ * delivered twice collapses on insert rather than needing application logic to
+ * notice. The insert failing is how a duplicate is detected.
+ */
+export const activityEvents = pgTable(
+  'activity_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+
+    signature: text('signature'),
+    slot: bigint('slot', { mode: 'number' }),
+
+    /** SWAP, STAKE_DETECTED, SECURITY_EVENT, DAILY_RESET, INTERACTION. */
+    eventType: text('event_type').notNull(),
+
+    /** HELIUS_WEBHOOK, RPC_HISTORY, MANUAL, DEMO. */
+    source: text('source'),
+
+    /** The normalized payload from spec section 24.2. */
+    payload: jsonb('payload').notNull().default({}),
+
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+    ingestedAt: timestamp('ingested_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    processedAt: timestamp('processed_at', { withTimezone: true }),
+
+    /** Section 24.4: network + signature + event_type. */
+    idempotencyKey: text('idempotency_key').notNull(),
+
+    /** Section 41: which config version processed this, for audit. */
+    configVersion: text('config_version'),
+  },
+  (table) => ({
+    /**
+     * The replay guard. Two concurrent inserts of the same event: one wins, one
+     * raises 23505, and the engine treats that as a no-op.
+     */
+    idempotencyIdx: uniqueIndex('activity_events_idempotency_key_key').on(
+      table.idempotencyKey,
+    ),
+    userIdx: index('activity_events_user_id_idx').on(table.userId),
+    /** Activity feeds read newest-first per user. */
+    userOccurredIdx: index('activity_events_user_occurred_idx').on(
+      table.userId,
+      table.occurredAt,
+    ),
+  }),
+)
+
+/**
+ * State changes — spec section 23.
+ *
+ * The audit trail. Section 38 rule 10 requires state changes to be logged with
+ * traceable event IDs, and this is that log: before/after snapshots plus the
+ * reason, so any progression number can be explained after the fact.
+ */
+export const stateChanges = pgTable(
+  'state_changes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companionId: uuid('companion_id')
+      .notNull()
+      .references(() => companions.id, { onDelete: 'cascade' }),
+
+    eventId: uuid('event_id').references(() => activityEvents.id, {
+      onDelete: 'set null',
+    }),
+
+    beforeState: jsonb('before_state').notNull(),
+    afterState: jsonb('after_state').notNull(),
+    reason: text('reason').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    companionIdx: index('state_changes_companion_id_idx').on(table.companionId),
+  }),
+)
+
+/**
+ * Achievements — spec section 23, with the categories from I06.
+ *
+ * UNIQUE(user_id, achievement_key) is what makes unlocking idempotent. Without it
+ * a replayed event would re-unlock and re-notify, which is the same class of bug
+ * as double-awarding XP.
+ */
+export const achievements = pgTable(
+  'achievements',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+
+    achievementKey: text('achievement_key').notNull(),
+    unlockedAt: timestamp('unlocked_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    metadata: jsonb('metadata').notNull().default({}),
+  },
+  (table) => ({
+    unlockIdx: uniqueIndex('achievements_user_key_key').on(
+      table.userId,
+      table.achievementKey,
+    ),
+  }),
+)
+
+/**
+ * Notifications — spec section 23.
+ *
+ * `read_at` nullable rather than a boolean: section 28 wants a feed that can
+ * show "new since last visit", which a boolean cannot express.
+ */
+export const notifications = pgTable(
+  'notifications',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+
+    /** Companion, activity, progression, auth — section 28.1 priorities. */
+    type: text('type').notNull(),
+    title: text('title').notNull(),
+    body: text('body').notNull(),
+    payload: jsonb('payload').notNull().default({}),
+    readAt: timestamp('read_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    /** The feed reads newest-first per user, filtered by unread. */
+    userCreatedIdx: index('notifications_user_created_idx').on(
+      table.userId,
+      table.createdAt,
+    ),
+  }),
+)
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type SiwsNonce = typeof siwsNonces.$inferSelect;
+
+// Row types, for the persistence layer. Inferred rather than hand-written so a
+// column change is a type error rather than a silent mismatch.
+export type Companion = typeof companions.$inferSelect
+export type ActivityEvent = typeof activityEvents.$inferSelect
+export type Achievement = typeof achievements.$inferSelect
+export type Notification = typeof notifications.$inferSelect
+export type StateChange = typeof stateChanges.$inferSelect
