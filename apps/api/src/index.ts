@@ -1,22 +1,43 @@
 /**
- * Gochi API — bootstrap entry point.
+ * Gochi API — server entry point.
  *
- * The service starts in P3. This file exists so the workspace is bootstrapped and
- * typechecking has something to resolve, and deliberately contains no server yet.
- *
- * What will be here, per spec sections 21-24 and 40:
- *   - SIWS session auth (verify the MWA signature, issue a JWT)
- *   - the /v1 companion, activity, progression, achievements and notification routes
- *   - the ingestion adapters (Helius webhooks, with an RPC history fallback)
- *   - the game engine, which is the only thing allowed to mutate progression
- *
- * Two invariants that shape every endpoint here, from spec sections 21.2 and 38:
- *   1. Progression is authoritative on the server. A client-supplied level, XP or
- *      Genesis flag is never trusted.
- *   2. Every state mutation is idempotent and keyed, so a replayed webhook or a
- *      double-tapped button cannot double-award.
- *
- * See PLAN.md phase P3 for the endpoint list and P2 for the engine contract.
+ * The only module that opens a port. The app itself lives in `app.ts` so tests
+ * can import and exercise it without a listener.
  */
 
-export {}
+import { serve } from "@hono/node-server";
+
+import { app } from "./app.js";
+import { closeDb } from "./db/client.js";
+import { env } from "./env.js";
+import { logger } from "./core/logging.js";
+
+/**
+ * Binds 0.0.0.0 so a handset on the same network can reach it during
+ * development — the mobile app talks to this over the LAN, not over loopback.
+ * A production deployment should sit behind a proxy rather than expose a
+ * listener on every interface.
+ */
+export function start(port: number = env.port) {
+  const server = serve({ fetch: app.fetch, port, hostname: "0.0.0.0" });
+  logger.info("server.listening", { port });
+
+  let shuttingDown = false;
+  const shutdown = () => {
+    // A second Ctrl-C should not re-enter: closing the pool twice logs noise and
+    // the process is already on its way out.
+    if (shuttingDown) return;
+    shuttingDown = true;
+
+    logger.info("server.shutdown");
+    server.close();
+    void closeDb().finally(() => process.exit(0));
+  };
+
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+
+  return server;
+}
+
+start();

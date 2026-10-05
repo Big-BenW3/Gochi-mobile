@@ -160,6 +160,19 @@ export const env = {
   /** Solana JSON RPC endpoint. */
   solanaRpcUrl: optional("SOLANA_RPC_URL") ?? "https://api.devnet.solana.com",
 
+  /**
+   * Mainnet RPC, for reads that must hit mainnet whatever the working cluster
+   * is.
+   *
+   * Genesis Token verification and `.skr` resolution both need it: an SGT exists
+   * only on mainnet, so a devnet endpoint reports every wallet as having no
+   * device, and ANS has no devnet accounts so every `.skr` name comes back
+   * unresolved. Both are confident wrong answers rather than errors. Kept
+   * separate from `solanaRpcUrl` so a devnet default cannot silently break them.
+   */
+  solanaMainnetRpcUrl:
+    optional("SOLANA_MAINNET_RPC_URL") ?? "https://api.mainnet-beta.solana.com",
+
   /** Address the API listens on. */
   port: Number(process.env.PORT ?? 8787),
 

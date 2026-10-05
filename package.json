@@ -22,6 +22,7 @@
     "lint": "npm run lint --workspace mobile",
     "lint:check": "npm run lint:check --workspace mobile",
     "start": "npm run start --workspace mobile",
+    "test": "npm run test --workspace @gochi/api",
     "typecheck": "npm run typecheck --workspace mobile"
   },
   "engines": {

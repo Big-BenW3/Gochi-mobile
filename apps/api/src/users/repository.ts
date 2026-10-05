@@ -107,10 +107,6 @@ export async function touchLastSeen(userId: string): Promise<void> {
   }
 }
 
-export type LinkResult =
-  | { ok: true; user: User; alreadyLinked: boolean }
-  | { ok: false; reason: "wallet_already_linked"; ownerId: string };
-
 /**
  * Link a wallet to an account, creating the account if it does not exist.
  *
@@ -168,23 +164,39 @@ export async function upsertUserByPrivy(privyUserId: string): Promise<User> {
   }
 }
 
-export type AttachResult =
-  | { ok: true; user: User }
-  | { ok: false; reason: "wallet_already_linked"; ownerId: string };
+/**
+ * Thrown when a wallet is already linked to a different account.
+ *
+ * Carries `ownerId` so a caller can log which account holds it. A dedicated
+ * error rather than a result variant, because the conflict is detected partway
+ * through a multi-statement sequence and returning it would mean threading a
+ * value back through every step to express a single refusal.
+ */
+export class WalletAlreadyLinked extends Error {
+  /** Matches the Postgres unique violation, so route handlers can check one thing. */
+  readonly code = "23505";
+  readonly ownerId: string | undefined;
+
+  constructor(ownerId?: string) {
+    super("wallet_already_linked");
+    this.name = "WalletAlreadyLinked";
+    this.ownerId = ownerId;
+  }
+}
 
 /**
  * Attach a wallet to an existing account (the Google path, at A07).
  *
- * Refuses rather than stealing: if the wallet already belongs to somebody, that
- * is reported so the UI can explain it. Section 29.3 asks us to prevent two
- * Google accounts claiming the same companion, and quietly moving a wallet
- * between accounts would be worse than refusing — it would let whoever signed
- * in second take over the first one's companion.
+ * Refuses rather than stealing: if the wallet already belongs to somebody, this
+ * throws `WalletAlreadyLinked`. Section 29.3 asks us to prevent two Google
+ * accounts claiming the same companion, and quietly moving a wallet between
+ * accounts would be worse than refusing — it would let whoever signed in second
+ * take over the first one's companion.
  */
 export async function attachWalletToUser(
   userId: string,
   walletAddress: string,
-): Promise<AttachResult> {
+): Promise<{ user: User }> {
   const user = await findById(userId);
   if (!user) {
     // A session naming an account that does not exist is a broken state, not a
@@ -193,12 +205,12 @@ export async function attachWalletToUser(
   }
 
   if (user.walletAddress === walletAddress) {
-    return { ok: true, user };
+    return { user };
   }
 
   const holder = await findByWallet(walletAddress);
   if (holder && holder.id !== userId) {
-    return { ok: false, reason: "wallet_already_linked", ownerId: holder.id };
+    throw new WalletAlreadyLinked(holder.id);
   }
 
   // Close any active link on the wallet we are taking, then claim it.
@@ -230,10 +242,7 @@ export async function attachWalletToUser(
     // Another session attached it microseconds ago. Report it rather than
     // stealing: section 29.3 asks us to stop two accounts claiming one companion.
     const winner = await findByWallet(walletAddress);
-    throw Object.assign(new Error("wallet_already_linked"), {
-      code: UNIQUE_VIOLATION,
-      ownerId: winner?.id,
-    });
+    throw new WalletAlreadyLinked(winner?.id);
   }
 
   await db
@@ -244,7 +253,7 @@ export async function attachWalletToUser(
   const updated = await findById(userId);
   if (!updated) throw new Error(`User ${userId} vanished during attach`);
 
-  return { ok: true, user: updated };
+  return { user: updated };
 }
 
 /**
