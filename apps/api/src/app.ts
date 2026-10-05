@@ -17,6 +17,8 @@ import { cors } from "hono/cors";
 import { env } from "./env.js";
 import { logger } from "./core/logging.js";
 import { authRoutes, sessionRoutes } from "./http/identity-routes.js";
+import { ApiError } from "./http/errors.js";
+import { gameRoutes, metadataRoutes } from "./http/game-routes.js";
 
 export function createApp() {
   const app = new Hono();
@@ -49,7 +51,13 @@ export function createApp() {
   app.get("/health", (c) => c.json({ ok: true }));
 
   app.route("/v1/auth", authRoutes);
+  // /v1/me and /v1/genesis from identity, then the ten §40 game-state routes.
   app.route("/v1", sessionRoutes);
+  app.route("/v1", gameRoutes);
+
+  // Unauthenticated: a Core metadata document is public on-chain by design, since
+  // anyone holding the asset must be able to fetch it. It carries no user data.
+  app.route("/v1/metadata", metadataRoutes);
 
   /** Unmatched paths answer in the same error shape as everything else. */
   app.notFound((c) =>
@@ -58,6 +66,13 @@ export function createApp() {
 
   /** Anything a handler did not catch. */
   app.onError((error, c) => {
+    // An ApiError thrown by middleware — a missing session, a rate limit — is a
+    // deliberate refusal, not a fault. Without this it answers 500, telling the
+    // client the server is broken when the request was merely unauthenticated.
+    if (error instanceof ApiError) {
+      return c.json(error.toBody(), error.status as never);
+    }
+
     logger.error("server.unhandled", {
       reason: error instanceof Error ? error.message : "unknown",
       path: c.req.path,

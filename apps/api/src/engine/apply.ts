@@ -161,50 +161,63 @@ export type IngestResult =
 export async function ingestEvent(params: {
   userId: string;
   event: NormalizedEvent;
+  /**
+   * Process a row that is already recorded, rather than inserting it.
+   *
+   * Ingestion (P7) writes the event; the engine applies it. `/v1/companion/sync`
+   * reconciles whatever ingestion has written but not yet processed, so it has to
+   * process the existing row — re-inserting it would collide with its own
+   * idempotency key and come back as a duplicate of itself.
+   */
+  existingEventId?: string;
   now?: Date;
   config?: GameConfig;
 }): Promise<IngestResult> {
   const now = params.now ?? new Date();
   const config = params.config ?? GAME_CONFIG_V1;
-  const { userId, event } = params;
+  const { userId, event, existingEventId } = params;
 
   const db = getDb();
 
   try {
     return await db.transaction(async (tx) => {
-      // --- 1. Claim the idempotency key. ---------------------------------
+      // --- 1. Claim the idempotency key, unless the row already exists. ---
       let eventId: string;
-      try {
-        const inserted = await tx
-          .insert(activityEvents)
-          .values({
-            userId,
-            signature: event.signature,
-            eventType: event.type,
-            source: event.source,
-            // xpAwarded is written back after the engine runs, which is why the
-            // payload is a mutable record rather than the raw event.
-            payload: { ...(event as unknown as Record<string, unknown>) },
-            occurredAt: new Date(event.timestamp * 1000),
-            idempotencyKey: event.idempotencyKey,
-            configVersion: config.version,
-          })
-          .returning({ id: activityEvents.id });
+      if (existingEventId) {
+        eventId = existingEventId;
+      } else {
+        try {
+          const inserted = await tx
+            .insert(activityEvents)
+            .values({
+              userId,
+              signature: event.signature,
+              eventType: event.type,
+              source: event.source,
+              // xpAwarded is written back after the engine runs, which is why the
+              // payload is a mutable record rather than the raw event.
+              payload: { ...(event as unknown as Record<string, unknown>) },
+              occurredAt: new Date(event.timestamp * 1000),
+              idempotencyKey: event.idempotencyKey,
+              configVersion: config.version,
+            })
+            .returning({ id: activityEvents.id });
 
-        eventId = inserted[0].id;
-      } catch (error) {
-        if ((error as { code?: string }).code === UNIQUE_VIOLATION) {
-          const existing = await tx
-            .select({ id: activityEvents.id })
-            .from(activityEvents)
-            .where(eq(activityEvents.idempotencyKey, event.idempotencyKey))
-            .limit(1);
-          throw Object.assign(new Error("duplicate_event"), {
-            code: UNIQUE_VIOLATION,
-            existingEventId: existing[0]?.id,
-          });
+          eventId = inserted[0].id;
+        } catch (error) {
+          if ((error as { code?: string }).code === UNIQUE_VIOLATION) {
+            const existing = await tx
+              .select({ id: activityEvents.id })
+              .from(activityEvents)
+              .where(eq(activityEvents.idempotencyKey, event.idempotencyKey))
+              .limit(1);
+            throw Object.assign(new Error("duplicate_event"), {
+              code: UNIQUE_VIOLATION,
+              existingEventId: existing[0]?.id,
+            });
+          }
+          throw error;
         }
-        throw error;
       }
 
       // --- 2. Load the companion. ----------------------------------------

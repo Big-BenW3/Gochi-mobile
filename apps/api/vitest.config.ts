@@ -25,5 +25,12 @@ export default defineConfig({
      */
     testTimeout: 120_000,
     hookTimeout: 120_000,
+    // A small rate-limit budget so the flood tests do not need a hundred real
+    // database round trips to trip a limiter. Production defaults are 120/30; the
+    // middleware falls back to those when these are unset.
+    env: {
+      RATE_LIMIT_READ: '8',
+      RATE_LIMIT_WRITE: '8',
+    },
   },
 });

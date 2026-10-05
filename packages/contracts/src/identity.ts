@@ -236,6 +236,16 @@ export const apiErrorCodeSchema = z.enum([
   "verification_unavailable",
   /** Request body failed schema validation. */
   "invalid_request",
+  /** Rate limited, per spec 38 rule 8. Carries a Retry-After header. */
+  "rate_limited",
+  /**
+   * A repeated write inside the idempotency window.
+   *
+   * A convenience guard in front of the durable one: the real replay protection
+   * is the unique index on activity_events.idempotency_key, which holds across
+   * processes and forever. This only saves a double-tapped button a round trip.
+   */
+  "idempotent_replay",
   /** Anything unexpected. */
   "internal_error",
 ]);

@@ -26,20 +26,30 @@ let appDb: ReturnType<typeof drizzleNodePostgres<typeof schema>> | undefined;
 /**
  * The pooled client used by the running server.
  *
- * `max: 1` is deliberate. Neon free tier allows a small pool, and a single
- * connection serialises requests, which is acceptable for a V1 where the only
- * hot path is auth. Raising this without raising the Neon's connection limit is
- * the fastest way to get "too many connections" errors in production.
+ * The ceiling is deliberately low. Neon free tier allows a small pool, and
+ * raising this without raising Neon's own connection limit is the fastest way to
+ * get "too many connections" in production. Two rather than one so a long-running
+ * read cannot block a write behind it; overridable because the right number
+ * depends on the plan, and a suite that opens a connection per test will exhaust a
+ * pool sized for production traffic.
  */
 function getAppClient(): postgres.Sql {
   if (!appClient) {
     appClient = postgres(env.databaseUrlPooled ?? env.databaseUrl, {
-      max: 1,
+      max: Number(process.env.DB_POOL_MAX ?? 2),
       // Neon terminates idle server-side connections. Without a keepalive the
       // pool hands out a socket the pooler has already closed, which surfaces
       // as an intermittent "Connection terminated" on otherwise idle routes.
+      // Neon's pooler drops idle server-side connections. Without these the pool
+      // hands out a socket the far end has already closed, which surfaces as an
+      // intermittent connect timeout rather than as a query error — so a suite
+      // that runs for a minute fails at random and looks like a network problem.
       idle_timeout: 20,
-      connect_timeout: 10,
+      connect_timeout: 30,
+      // Hold the connection open between suites. The default lets it go idle
+      // during a slow test, and re-establishing it costs a TLS handshake each time.
+      keep_alive: 30,
+      max_lifetime: 60 * 30,
       // Drizzle sends Date objects; postgres.js parses timestamptz as strings
       // by default, which would make every timestamp a string in the app.
       types: {

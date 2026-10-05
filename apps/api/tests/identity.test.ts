@@ -340,7 +340,10 @@ describe("GET /v1/genesis", () => {
 describe("unmatched routes", () => {
   it("answers 404 in the shared error shape", async () => {
     const { auth } = await signIn();
-    const response = await get("/v1/companion", auth);
+    // A path that genuinely does not exist. `/v1/companion` used to be the
+    // example here, but P3 mounted it, so it would now return 200 — which is
+    // exactly the kind of stale expectation that makes a suite lie.
+    const response = await get("/v1/nonexistent", auth);
 
     expect(response.status).toBe(404);
     expect((await json(response)).code).toBe("invalid_request");
