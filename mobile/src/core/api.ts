@@ -188,11 +188,59 @@ export const api = {
   /** Re-check a linked wallet for a Seeker Genesis Token. */
   genesis: () => request<GenesisResult>('/v1/genesis'),
 
+  /**
+   * Create the companion and its Core Asset (spec 32).
+   *
+   * Idempotent per wallet: a repeat call returns the existing companion rather than
+   * minting a second asset, which is what makes a double-tapped button harmless.
+   */
+  createCompanion: (body: { name: string }) =>
+    request<{
+      companion: { id: string; assetAddress: string | null }
+      alreadyCreated: boolean
+      signature?: string
+      funding: { paidBy: string; copy: string; requiresUserApproval: false }
+      transfer?: { soulbound: boolean; holderCanTransfer: boolean; reason: string }
+    }>('/v1/companion', { body, method: 'POST' }),
+
+  /** The Core asset detail for screen G03. */
+  companionAsset: () =>
+    request<{
+      assetId: string | null
+      metadataUri: string | null
+      owner: string | null
+      name: string
+      level: number
+      evolutionStage: number
+    }>('/v1/companion/asset'),
+
   me: () => request<User>('/v1/me'),
   companion: () => request<unknown>('/v1/companion'),
 
   /** Ask the server to reconcile activity. Progression is applied server-side. */
-  syncCompanion: () => request<unknown>('/v1/companion/sync', { method: 'POST' }),
+  /**
+   * Ask the server to reconcile activity (spec 40).
+   *
+   * Typed rather than `unknown` because A14 renders `eventsProcessed` directly: the
+   * difference between "nothing to sync" and "sync failed" is a user-visible
+   * distinction, and scenario 2 requires the first to read as genuinely empty.
+   */
+  syncCompanion: () =>
+    request<{
+      eventsProcessed: number
+      eventsSkipped: number
+      xpAwarded: number
+      companion: import('@gochi/contracts').Companion
+      gameEvents: { type: string; detail: Record<string, unknown> }[]
+      notifications: {
+        id: string
+        type: string
+        title: string
+        body: string
+        readAt: string | null
+        createdAt: string
+      }[]
+    }>('/v1/companion/sync', { method: 'POST' }),
 
   /**
    * Record a direct companion interaction (spec section 40).
