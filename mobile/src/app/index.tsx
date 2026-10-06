@@ -38,10 +38,7 @@ import {
 import { colors } from '../theme/tokens'
 import { api } from '../core/api'
 import { FabButton } from '../components/navigation/fab-button'
-import {
-  StaticCompanion,
-  useStageVisibility,
-} from '../features/companion/ui/companion-stage'
+import { StaticCompanion, useStageVisibility } from '../features/companion/ui/companion-stage'
 
 interface CompanionView {
   id: string
@@ -225,10 +222,7 @@ export default function CompanionHomeScreen() {
         rejected: four equally-weighted destinations make the companion compete with
         its own navigation.
       */}
-      <FabButton
-        onPress={() => router.push('/activity')}
-        accessibilityLabel="Open companion menu"
-      />
+      <FabButton onPress={() => router.push('/activity')} accessibilityLabel="Open companion menu" />
     </Screen>
   )
 }
