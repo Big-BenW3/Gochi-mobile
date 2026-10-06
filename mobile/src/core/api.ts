@@ -251,7 +251,11 @@ export const api = {
   recordInteraction: (kind: string) =>
     request<unknown>('/v1/companion/interaction', { body: { kind }, method: 'POST' }),
 
-  activity: (cursor?: string) => request<unknown>('/v1/activity', { query: { cursor } }),
+  activity: (cursor?: string) =>
+    request<{
+      events: { id: string; eventType: string; occurredAt: string }[]
+      nextCursor: string | null
+    }>('/v1/activity', { query: { cursor } }),
   activityEvent: (id: string) => request<unknown>(`/v1/activity/${id}`),
 
   progression: () => request<unknown>('/v1/progression'),

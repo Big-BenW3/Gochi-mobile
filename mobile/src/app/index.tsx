@@ -1,123 +1,234 @@
-import { ScrollView, View } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
+/**
+ * B01 — Companion Home.
+ *
+ * The primary screen, and the one every navigation path returns to. Spec section 16
+ * lists its contents: the companion, its name, level, XP progress, condition, the
+ * three stats, the latest event, a while-you-were-away teaser, and the FAB.
+ *
+ * Two decisions worth naming:
+ *
+ * **Stats come from the server, including the XP the curve needs.** The client never
+ * recomputes XP-to-next — section 21.2 makes the server authoritative and section 41
+ * wants balance changes to need no app release. A locally calculated progress bar
+ * would silently disagree with the server the moment the curve changed.
+ *
+ * **Tapping a stat opens its explanation rather than a chart.** Energy, shield and
+ * aura each mean something different and none is obvious from a number. Section 4.3
+ * is explicit that the shield must never read as a security score, and the copy
+ * below is where that promise is kept.
+ */
+
+import { useCallback, useEffect, useState } from 'react'
+import { useRouter } from 'expo-router'
+
+import { Pressable, View } from 'react-native'
 
 import {
   Card,
-  ChipRow,
   ConditionBadge,
-  EmptyState,
-  ErrorState,
-  ExplorerLink,
-  LoadingState,
   LevelBadge,
   OfflineBanner,
-  PrimaryButton,
   ProgressBar,
   Screen,
-  SecondaryButton,
-  SeekerIdentityChip,
   StatRow,
   StatTile,
-  TertiaryButton,
   Text,
-  WalletChip,
+  TopBar,
 } from '../components/ui'
-import { allConditions } from '../domain/companion/conditions'
-import { colors, space } from '../theme/tokens'
+import { colors } from '../theme/tokens'
+import { api } from '../core/api'
+import { FabButton } from '../components/navigation/fab-button'
+import {
+  StaticCompanion,
+  useStageVisibility,
+} from '../features/companion/ui/companion-stage'
 
-/**
- * TEMPORARY — P0 placeholder screen.
- *
- * This is not a Gochi product screen. It is a visual harness for the design
- * system, which is the only way to check the palette, the type scale and the
- * components actually look right before an Android build exists.
- *
- * It is replaced by Companion Home in P5 (the 3D view) and P6 (the FAB
- * navigation). Do not build on it.
- *
- * Every spec section 52 primitive is exercised here on purpose: a component that
- * is never rendered is a component nobody has looked at.
- */
-export default function DesignSystemPreview() {
+interface CompanionView {
+  id: string
+  name: string
+  level: number
+  xp: number
+  xpToNextLevel: number
+  energy: number
+  shieldHealth: number
+  aura: number
+  combatRating: number
+  condition: string
+  evolutionStage: number
+}
+
+/** What each stat actually means, in one sentence. */
+const STAT_COPY: Record<string, { title: string; body: string }> = {
+  energy: {
+    title: 'Energy',
+    body: 'Drops slowly while your wallet is quiet and recovers through staking. It settles at 20 and never reaches zero — a tired companion is resting, not dying.',
+  },
+  shield: {
+    title: 'Shield',
+    body: 'Protection is shown, not scored. Gochi cannot inspect wallet security, so this reflects confirmed activity rather than a security rating.',
+  },
+  aura: {
+    title: 'Aura and combat rating',
+    body: 'Activity intensity. Both rise with verified swaps and fall back over time. This is a visual signal, not a ranking against anyone.',
+  },
+}
+
+function formatEvent(type: string): string {
+  switch (type) {
+    case 'SWAP':
+      return 'A swap lifted its aura.'
+    case 'STAKE_DETECTED':
+      return 'Staking restored its energy.'
+    case 'SECURITY_EVENT':
+      return 'A security signal came through.'
+    case 'INTERACTION':
+      return 'It asked for a moment.'
+    default:
+      return 'It stirred.'
+  }
+}
+
+export default function CompanionHomeScreen() {
+  const router = useRouter()
+  const active = useStageVisibility()
+
+  const [companion, setCompanion] = useState<CompanionView | null>(null)
+  const [latestEvent, setLatestEvent] = useState<string | null>(null)
+  const [offline, setOffline] = useState(false)
+  const [explaining, setExplaining] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    try {
+      const response = await api.companion()
+      const payload = (response as unknown as { companion: CompanionView }).companion
+      setCompanion(payload)
+      setOffline(false)
+      try {
+        const feed = await api.activity()
+        const first = feed.events?.[0]
+        if (first) setLatestEvent(formatEvent(first.eventType))
+      } catch {
+        /* latest event is a teaser, not a reason to show an error */
+      }
+    } catch {
+      // Section 36: a cached companion stays on screen when the network fails.
+      // Section 53 rule 9 forbids replacing data with a spinner.
+      setOffline(true)
+    }
+  }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
   return (
-    <SafeAreaView className="flex-1 bg-ink-900" edges={['top', 'bottom']}>
-      <ScrollView contentContainerStyle={{ gap: space.lg, padding: space.gutter }}>
-        <Screen gap="lg">
-          <View className="gap-1">
-            <Text variant="display">Gochi</Text>
-            <Text variant="body">Design system harness — P0 placeholder, not a product screen.</Text>
+    <Screen>
+      <TopBar title={companion?.name ?? 'Gochi'} />
+
+      {offline ? <OfflineBanner /> : null}
+
+      <View style={{ flex: 1, minHeight: 220 }}>
+        {companion ? (
+          <StaticCompanion
+            active={active}
+            visual={{
+              condition: companion.condition as never,
+              level: companion.level,
+              evolutionStage: companion.evolutionStage,
+              energy: companion.energy,
+              aura: companion.aura,
+              combatRating: companion.combatRating,
+              shieldHealth: companion.shieldHealth,
+            }}
+          />
+        ) : null}
+      </View>
+
+      {explaining ? (
+        <Card>
+          <Text variant="title">{STAT_COPY[explaining]?.title}</Text>
+          <Text variant="body">{STAT_COPY[explaining]?.body}</Text>
+        </Card>
+      ) : null}
+
+      {companion ? (
+        <Card>
+          <View className="flex-row items-center justify-between">
+            <Text variant="title">{companion.name}</Text>
+            <LevelBadge level={companion.level} />
           </View>
 
-          <Card title="Identity">
-            <ChipRow>
-              <WalletChip address="DztJxBybR7fKa9UyR8fBZMohaZYcLydyxrJr5CuJBa34" />
-              <LevelBadge level={12} />
-            </ChipRow>
-            <ChipRow>
-              <SeekerIdentityChip isVerified name="gochi.skr" />
-              <SeekerIdentityChip name={null} />
-            </ChipRow>
-          </Card>
+          <ConditionBadge condition={companion.condition as never} />
 
-          <Card title="Stats">
-            <StatRow>
-              <StatTile label="Energy" progress={0.72} tint={colors.primary} value="72/100" />
-              <StatTile isHighlighted label="Shield" progress={0.88} tint={colors.signal} value="88/100" />
-              <StatTile label="Aura" progress={0.42} tint={colors.reward} value="42" />
-            </StatRow>
-          </Card>
+          {/*
+            XP progress uses the server's xpToNextLevel rather than a locally
+            computed one. Section 41 wants a balance change to need no app release,
+            and a client-side curve would disagree with the server the moment it
+            changed.
+          */}
+          {/* XP progress uses the server's xpToNextLevel (see file header). */}
+          <ProgressBar
+            value={companion.xp}
+            max={Math.max(1, companion.xpToNextLevel)}
+            tint={colors.primary}
+            accessibilityLabel={`${companion.xp} of ${companion.xpToNextLevel} XP`}
+          />
+          <Text variant="caption">
+            {companion.xp} / {companion.xpToNextLevel} XP to level {companion.level + 1}
+          </Text>
 
-          <Card title="Conditions">
-            <View style={{ gap: space.sm }}>
-              <ChipRow>
-                <ConditionBadge condition="ENERGIZED" />
-                <ConditionBadge condition="DAMAGED" />
-              </ChipRow>
-              <ChipRow>
-                {allConditions.map((c) => (
-                  <ConditionBadge key={c.id} condition={c.id} size="sm" />
-                ))}
-              </ChipRow>
-            </View>
-          </Card>
-
-          <Card title="Meters">
-            <View style={{ gap: space.md }}>
-              <ProgressBar accessibilityLabel="Energy 72 of 100" glows tint={colors.primary} value={72} />
-              <ProgressBar accessibilityLabel="Aura 42 of 100" tint={colors.reward} value={42} />
-              <ProgressBar tint={colors.recover} value={100} />
-              <ProgressBar tint={colors.ink700} value={0} />
-            </View>
-          </Card>
-
-          <Card title="Buttons">
-            <View style={{ gap: space.sm }}>
-              <PrimaryButton label="Continue with Seeker" onPress={() => {}} />
-              <SecondaryButton label="Continue with Google" onPress={() => {}} />
-              <TertiaryButton fullWidth={false} label="Skip for now" onPress={() => {}} />
-              <PrimaryButton isBusy label="Connecting" onPress={() => {}} />
-              <PrimaryButton isDisabled label="Disabled" onPress={() => {}} />
-            </View>
-          </Card>
-
-          <Card title="States">
-            <View style={{ gap: space.sm }}>
-              <OfflineBanner />
-              <ErrorState message="We could not verify your Seeker identity right now." onRetry={() => {}} />
-              <EmptyState
-                action={<SecondaryButton fullWidth={false} label="Connect wallet" onPress={() => {}} />}
-                message="Connect a wallet and your companion will start reacting to your activity."
-                title="No companion yet"
+          <StatRow>
+            <Pressable onPress={() => setExplaining('energy')} accessibilityLabel="About energy">
+              <StatTile
+                label="Energy"
+                value={String(companion.energy)}
+                progress={companion.energy / 100}
+                tint={colors.signal}
+                isHighlighted
               />
-              <LoadingState label="Syncing activity" />
-            </View>
-          </Card>
+            </Pressable>
+            <Pressable onPress={() => setExplaining('shield')} accessibilityLabel="About shield">
+              <StatTile
+                label="Shield"
+                value={String(companion.shieldHealth)}
+                progress={companion.shieldHealth / 100}
+                tint={colors.recover}
+              />
+            </Pressable>
+            <Pressable onPress={() => setExplaining('aura')} accessibilityLabel="About aura">
+              <StatTile
+                label="Aura"
+                value={String(companion.aura)}
+                progress={companion.aura / 100}
+                tint={colors.primary}
+              />
+            </Pressable>
+          </StatRow>
 
-          <Card title="Links">
-            <ExplorerLink label="View on Solana Explorer" url="https://explorer.solana.com" />
-          </Card>
-        </Screen>
-      </ScrollView>
-    </SafeAreaView>
+          <StatTile
+            label="Combat rating"
+            value={String(companion.combatRating)}
+            progress={companion.combatRating / 1000}
+            tint={colors.primary}
+          />
+        </Card>
+      ) : null}
+
+      {latestEvent ? (
+        <Card title="Latest">
+          <Text variant="body">{latestEvent}</Text>
+        </Card>
+      ) : null}
+
+      {/*
+        FAB-first with no tab bar (ADR-004). The concept board's tab strip was
+        rejected: four equally-weighted destinations make the companion compete with
+        its own navigation.
+      */}
+      <FabButton
+        onPress={() => router.push('/activity')}
+        accessibilityLabel="Open companion menu"
+      />
+    </Screen>
   )
 }
