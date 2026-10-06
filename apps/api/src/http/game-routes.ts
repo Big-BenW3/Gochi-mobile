@@ -299,6 +299,54 @@ gameRoutes.get("/activity", async (c) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// GET /v1/activity/sync-status
+// ---------------------------------------------------------------------------
+
+/**
+ * What ingestion has observed.
+ *
+ * Needed because section 28 feeds status into sync UI, and because "activity
+ * is a teaser" is easy to fake: the only honest values here are ones derived from
+ * rows that exist.
+ */
+gameRoutes.get("/activity/sync-status", async (c) => {
+  try {
+    const userId = c.get("userId");
+
+    const [{ value: total }] = await getDb()
+      .select({ value: count() })
+      .from(activityEvents)
+      .where(eq(activityEvents.userId, userId));
+
+    const [{ value: pending }] = await getDb()
+      .select({ value: count() })
+      .from(activityEvents)
+      .where(and(eq(activityEvents.userId, userId), isNull(activityEvents.processedAt)));
+
+    const processed = await getDb()
+      .select({ processedAt: activityEvents.processedAt })
+      .from(activityEvents)
+      .where(and(eq(activityEvents.userId, userId), sql`${activityEvents.processedAt} is not null`))
+      .orderBy(desc(activityEvents.processedAt))
+      .limit(1);
+
+    const lastSuccessful = processed[0]?.processedAt ?? null;
+
+    return c.json(
+      {
+        lastSuccessfulSync: lastSuccessful ? lastSuccessful.toISOString() : null,
+        pendingCount: Number(pending),
+        totalEvents: Number(total),
+        ingestion: "rpc" as const,
+      },
+      200,
+    );
+  } catch (error) {
+    return fail(c, error);
+  }
+});
+
 gameRoutes.get("/activity/:id", async (c) => {
   try {
     const id = z.string().uuid().parse(c.req.param("id"));
@@ -355,6 +403,8 @@ gameRoutes.get("/activity/:id", async (c) => {
     return fail(c, error);
   }
 });
+
+
 
 // ---------------------------------------------------------------------------
 // GET /v1/progression

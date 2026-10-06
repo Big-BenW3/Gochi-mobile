@@ -386,6 +386,35 @@ describe("Core metadata host", () => {
   });
 });
 
+describe("GET /v1/activity/sync-status", () => {
+  it("reports a clean state for a new user", async () => {
+    const response = await get_("/v1/activity/sync-status");
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body.pendingCount).toBe(0);
+    expect(body.totalEvents).toBe(0);
+    expect(body.ingestion).toBe("rpc");
+  });
+
+  it("counts a pending, unprocessed event without inventing a success", async () => {
+    const user = (await getDb().select().from(users))[0];
+    await getDb().insert(activityEvents).values({
+      userId: user.id,
+      eventType: "SWAP",
+      source: "HELIUS_WEBHOOK",
+      payload: {},
+      occurredAt: new Date(T0),
+      idempotencyKey: "pending-status",
+      configVersion: "GAME_CONFIG_V1",
+    });
+
+    const response = await get_("/v1/activity/sync-status");
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body.pendingCount).toBe(1);
+    expect(body.lastSuccessfulSync).toBeNull();
+  });
+});
+
 describe("admin config (spec 41)", () => {
   it("exposes the tuning values", async () => {
     const body = (await (await get_("/v1/admin/config")).json()) as Record<
