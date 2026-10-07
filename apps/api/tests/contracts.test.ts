@@ -150,15 +150,40 @@ describe("vault (spec 9.3)", () => {
     expect(keys).not.toContain("totalValue");
 
     // A token carries an amount and a scale, and nothing that looks like money.
-    const tokenKeys = Object.keys(
-      (c.vaultResponseSchema.shape as { balances: { shape: Record<string, unknown> } })
-        .balances.shape.tokens
-        ? ((c.vaultResponseSchema.shape as never as { balances: { shape: { tokens: { _def: { shape: Record<string, unknown> } } } } }).balances.shape.tokens._def.shape)
-        : {},
-    );
-    expect(tokenKeys).toContain("amount");
-    expect(tokenKeys).not.toContain("priceUsd");
-    expect(tokenKeys).not.toContain("valueUsd");
+    //
+    // Asserted behaviourally rather than by reading the schema's keys: reaching
+    // into zod internals (`_def.shape`) tests the library's private structure
+    // instead of the contract, and silently passes on the wrong version. Feeding
+    // a token a price and checking it does not survive the parse tests the
+    // thing that actually matters — a price cannot reach a client, because the
+    // schema strips it rather than passing it through.
+    const parsed = c.vaultResponseSchema.safeParse({
+      ...validVault,
+      balances: {
+        available: true,
+        tokens: [
+          {
+            mint: "So11111111111111111111111111111111111111112",
+            amount: "4000000",
+            decimals: 6,
+            symbol: "USDC",
+            // A server that grew a price field would not fail these assertions
+            // if it also typed the field — this is the backstop for exactly that.
+            priceUsd: "4.00",
+            valueUsd: "4.00",
+          },
+        ],
+      },
+    });
+
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      const token = parsed.data.balances.tokens[0] as Record<string, unknown>;
+      expect(token.amount).toBe("4000000");
+      expect(token.decimals).toBe(6);
+      expect(token).not.toHaveProperty("priceUsd");
+      expect(token).not.toHaveProperty("valueUsd");
+    }
   });
 });
 
