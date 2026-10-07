@@ -1,0 +1,76 @@
+# Gochi API — Render blueprint (PLAN P14, hackathon submission).
+#
+# Native Node runtime, NOT Docker. The server runs TypeScript directly through
+# `tsx`, which is a real dependency, so there is no build step and no image to
+# maintain — nothing to install locally either.
+#
+# This was rehearsed before being written down: a clean checkout with a
+# production-only install booted and answered /health with 200 using the exact
+# commands below.
+#
+# Two non-obvious things, both learned the hard way:
+#
+# 1. The mobile workspace must stay committed. Root package.json declares
+#    `workspaces: ["mobile", "apps/*", "packages/*"]`, and npm needs every
+#    workspace's package.json present to build the dependency tree — even the
+#    ones it will not install. `--workspace` then restricts the install to the
+#    API and its contracts, so React Native's dependencies are never installed
+#    server-side.
+#
+# 2. `tsx` must NOT also be a devDependency. npm treats a package listed in both
+#    as dev, so `--omit=dev` drops it and the server dies with "tsx not found".
+services:
+  - type: web
+    name: gochi-api
+    runtime: node
+    plan: free
+    rootDir: .
+    buildCommand: npm ci --omit=dev --workspace @gochi/api --workspace @gochi/contracts --include-workspace-root
+    startCommand: npm run start --workspace @gochi/api
+    healthCheckPath: /health
+
+    envVars:
+      # Pinned for reproducibility. The local rehearsal ran on Node 24; 22 is
+      # the conservative LTS. Bump if the runtime complains.
+      - key: NODE_VERSION
+        value: "22"
+
+      # Neon. Direct for migrations (DDL needs a pinned session), pooled for the
+      # running server — Neon poolers drop idle server-side connections.
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_URL_POOLED
+        sync: false
+
+      # Session signing. Generate with: openssl rand -base64 48
+      - key: API_JWT_SECRET
+        sync: false
+
+      # Privy. The App ID is public by design and ships in the APK; the secret
+      # must never carry the EXPO_PUBLIC_ prefix, which Expo inlines into the
+      # bundle where anyone unpacking the APK can read it.
+      - key: EXPO_PUBLIC_PRIVY_APP_ID
+        sync: false
+      - key: EXPO_PRIVATE_PRIVY_APP_SECRET
+        sync: false
+
+      # Solana. Writes stay on devnet: the companion mint is the only write, and
+      # spending devnet keeps mainnet untouched.
+      - key: SOLANA_RPC_URL
+        value: https://api.devnet.solana.com
+
+      # Genesis Token and .skr resolve ONLY on mainnet. Pointed at devnet, every
+      # wallet reports as having no device — a confident wrong answer, not an
+      # error, which is the worst kind.
+      - key: SOLANA_MAINNET_RPC_URL
+        sync: false
+
+      # Helius key, for the ingestion adapter and reliable mainnet reads.
+      - key: HELIUS_API_KEY
+        sync: false
+
+      # The mint payer's keypair as base64, because a host has no keypair *file*.
+      # Populate with:  base64 -w0 /home/bigben/.config/solana/id.json
+      # Read by the mint module once the env-keypair path lands; harmless before.
+      - key: PAYER_SECRET_KEY_BASE64
+        sync: false
