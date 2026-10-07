@@ -380,6 +380,10 @@ export async function ingestEvent(params: {
             title: n.title,
             body: n.body,
             payload: { priority: n.priority, eventId },
+            // Event time, not wall clock — see the note on the dialogue insert
+            // below. Both rows are read back by the §8.4 window and the §28.2
+            // cap, both of which are computed against `now`.
+            createdAt: now,
           });
         }
       }
@@ -428,6 +432,14 @@ export async function ingestEvent(params: {
             // group by template without parsing prose.
             body: renderLine(templateKey, recent.length),
             payload: { templateKey, eventId },
+            // Written as event time rather than letting the column default to
+            // wall clock. `decideDialogue` above compares these rows against
+            // `now` (the event's time) to find the 5-minute burst window and the
+            // 60s cooldown, so a wall-clock stamp makes every line look like it
+            // was written in the future — every comparison is then "inside
+            // cooldown", and a burst can never fold. Backfilled events hit this
+            // hardest, since their block time is by definition older than now.
+            createdAt: now,
           });
         } else if (decision.action === "burst") {
           const body = `You made ${decision.count} moves. I definitely noticed.`;
@@ -443,6 +455,7 @@ export async function ingestEvent(params: {
               title: "swap_burst",
               body,
               payload: { templateKey: "swap_burst", eventId },
+              createdAt: now,
             });
           }
         }

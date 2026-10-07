@@ -45,7 +45,14 @@ function getAppClient(): postgres.Sql {
       // intermittent connect timeout rather than as a query error — so a suite
       // that runs for a minute fails at random and looks like a network problem.
       idle_timeout: 20,
-      connect_timeout: 30,
+      // 60s, not the usual 30. With `idle_timeout: 20` the pool discards a socket
+      // well before Neon does, so a later query re-handshakes TLS against a
+      // backend that may have been parked for a while — and that handshake
+      // intermittently took longer than 30s. It surfaced as connect ETIMEDOUT
+      // on tests that had been idle, which reads as a network fault rather than
+      // as a too-impatient timeout. A slow connect is recoverable; a failed one
+      // is not.
+      connect_timeout: 60,
       // Hold the connection open between suites. The default lets it go idle
       // during a slow test, and re-establishing it costs a TLS handshake each time.
       keep_alive: 30,
