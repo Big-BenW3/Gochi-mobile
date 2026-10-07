@@ -90,7 +90,7 @@ export class OfflineError extends Error {
 }
 
 type RequestOptions = {
-  method?: 'GET' | 'POST'
+  method?: 'GET' | 'POST' | 'PUT'
   body?: unknown
   /** Query string values. `undefined` entries are dropped. */
   query?: Record<string, string | number | boolean | undefined>
@@ -264,6 +264,34 @@ export const api = {
   notifications: () => request<unknown>('/v1/notifications'),
   markNotificationsRead: (ids: string[]) =>
     request<unknown>('/v1/notifications/read', { body: { ids }, method: 'POST' }),
+
+  /** §8 — the companion thread. */
+  dialogue: () => request<unknown>('/v1/dialogue'),
+
+  /** §28.2 preferences. */
+  notificationPrefs: () => request<unknown>('/v1/notification-prefs'),
+  updateNotificationPrefs: (prefs: {
+    systemEnabled: boolean
+    dialogueEnabled: boolean
+    quietStartHour: number | null
+    quietEndHour: number | null
+    dailyCap: number
+  }) =>
+    request<unknown>('/v1/notification-prefs', {
+      body: prefs,
+      method: 'PUT',
+    }),
+
+  /** §27 — "While You Were Away". */
+  whileYouWereAway: () => request<unknown>('/v1/while-you-were-away'),
+
+  /** §27.3 — daily summary. */
+  dailySummary: () => request<unknown>('/v1/daily-summary'),
+
+  /** §26 — evolution milestones. */
+  evolution: () => request<unknown>('/v1/evolution'),
+
+  achievement: (key: string) => request<unknown>(`/v1/achievements/${key}`),
 
   vault: () => request<unknown>('/v1/vault'),
 } as const

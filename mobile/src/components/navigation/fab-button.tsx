@@ -23,10 +23,17 @@ import { colors, radius, space } from '../../theme/tokens'
 
 /** Where the FAB leads. Order is the order they appear, most-used first. */
 const DESTINATIONS = [
+  { path: '/chat', label: 'Companion' },
   { path: '/activity', label: 'Activity' },
+  { path: '/progression', label: 'Progress' },
   { path: '/stats', label: 'Stats' },
   { path: '/vault', label: 'Vault' },
+  { path: '/achievements', label: 'Awards' },
   { path: '/notifications', label: 'Alerts' },
+  { path: '/shield', label: 'Shield' },
+  { path: '/staking', label: 'Staking' },
+  { path: '/aura', label: 'Aura' },
+  { path: '/profile', label: 'Profile' },
   { path: '/settings', label: 'Settings' },
 ] as const
 
