@@ -317,6 +317,27 @@ export const vaultResponseSchema = z.object({
     ),
   }),
   /**
+   * Token holdings, read from the chain.
+   *
+   * Display only. Section 9.2 asks for summaries, not a portfolio the app
+   * manages — and section 9.3 forbids implying custody, which is why each entry
+   * is a balance in the *user's* wallet and nothing is presented as spendable
+   * through Gochi.
+   */
+  balances: z.object({
+    /** False when the chain could not be read; the UI shows a retry, not zeros. */
+    available: z.boolean(),
+    tokens: z.array(
+      z.object({
+        mint: z.string(),
+        /** Raw onchain amount, unformatted: the client must not invent a price. */
+        amount: z.string(),
+        decimals: z.number().int().min(0).max(18),
+        symbol: z.string().nullable(),
+      }),
+    ),
+  }),
+  /**
    * A fixed statement, not a computed flag.
    *
    * Rendered verbatim in the UI so the custody boundary is always on screen rather
@@ -392,3 +413,131 @@ export const gameConfigResponseSchema = z.object({
   dailyNotificationCap: z.number(),
 });
 export type GameConfigResponse = z.infer<typeof gameConfigResponseSchema>;
+
+// ---------------------------------------------------------------------------
+// GET /v1/dialogue  and  GET/PUT /v1/notification-prefs
+// ---------------------------------------------------------------------------
+
+/**
+ * A companion line (§8). `templateKey` is the machine-readable key the engine
+ * emitted; `body` is the authored text (§8.3) so the client never has to hold
+ * its own copy of the personality.
+ */
+export const dialogueMessageSchema = z.object({
+  id: z.string().uuid(),
+  templateKey: z.string(),
+  body: z.string(),
+  createdAt: z.string().datetime(),
+  readAt: z.string().datetime().nullable(),
+});
+export type DialogueMessageDto = z.infer<typeof dialogueMessageSchema>;
+
+export const dialogueResponseSchema = z.object({
+  messages: z.array(dialogueMessageSchema),
+  /** §8.4 context the UI shows above the thread (§8 conversation context). */
+  lastTrigger: z
+    .object({
+      templateKey: z.string(),
+      createdAt: z.string().datetime(),
+    })
+    .nullable(),
+});
+export type DialogueResponse = z.infer<typeof dialogueResponseSchema>;
+
+/** §28.2 preferences. Null hour means the corresponding bound is off. */
+export const notificationPrefsSchema = z.object({
+  systemEnabled: z.boolean(),
+  dialogueEnabled: z.boolean(),
+  quietStartHour: z.number().int().min(0).max(23).nullable(),
+  quietEndHour: z.number().int().min(0).max(23).nullable(),
+  dailyCap: z.number().int().min(1).max(100),
+});
+export type NotificationPrefsDto = z.infer<typeof notificationPrefsSchema>;
+
+export const notificationPrefsResponseSchema = z.object({
+  prefs: notificationPrefsSchema,
+});
+export type NotificationPrefsResponse = z.infer<
+  typeof notificationPrefsResponseSchema
+>;
+
+// ---------------------------------------------------------------------------
+// §26 evolution, §27 While You Were Away, §27.3 daily summary
+// ---------------------------------------------------------------------------
+
+/** One evolution milestone. §26: stages unlock at fixed levels. */
+export const evolutionMilestoneSchema = z.object({
+  stage: z.number().int().min(1),
+  atLevel: z.number().int().min(1),
+  unlocked: z.boolean(),
+  /** Current level's progress toward the next milestone, 0-100. */
+  progressPercent: z.number().min(0).max(100),
+});
+export type EvolutionMilestoneDto = z.infer<typeof evolutionMilestoneSchema>;
+
+export const evolutionResponseSchema = z.object({
+  currentStage: z.number().int().min(1),
+  nextStageAtLevel: z.number().int().min(1).nullable(),
+  milestones: z.array(evolutionMilestoneSchema),
+});
+export type EvolutionResponse = z.infer<typeof evolutionResponseSchema>;
+
+/**
+ * §27.2 ranked highlights. Ordered most to least meaningful so the client can
+ * render the list without re-deriving priority.
+ */
+export const awayHighlightSchema = z.object({
+  kind: z.enum([
+    "level_up",
+    "evolution",
+    "activity_burst",
+    "staking",
+    "shield_change",
+    "xp_change",
+  ]),
+  title: z.string(),
+  detail: z.string(),
+  count: z.number().int().min(0),
+});
+export type AwayHighlightDto = z.infer<typeof awayHighlightSchema>;
+
+export const whileYouWereAwayResponseSchema = z.object({
+  /** False when there is nothing worth interrupting a return for. */
+  hasSummary: z.boolean(),
+  since: z.string().datetime().nullable(),
+  /** §27.3 authored block, e.g. "+160 XP / +20 Energy / +1 Level". */
+  lines: z.array(z.string()),
+  xpGained: z.number().int().min(0),
+  energyGained: z.number().int().min(0),
+  levelsGained: z.number().int().min(0),
+  swapEvents: z.number().int().min(0),
+  stakingEvents: z.number().int().min(0),
+  evolutionStage: z.number().int().min(1).nullable(),
+  highlights: z.array(awayHighlightSchema),
+});
+export type WhileYouWereAwayResponse = z.infer<
+  typeof whileYouWereAwayResponseSchema
+>;
+
+export const dailySummaryResponseSchema = z.object({
+  dayIndex: z.number().int(),
+  xpGained: z.number().int().min(0),
+  energyGained: z.number().int().min(0),
+  swapEvents: z.number().int().min(0),
+  stakingEvents: z.number().int().min(0),
+  interactionCount: z.number().int().min(0),
+  lines: z.array(z.string()),
+});
+export type DailySummaryResponse = z.infer<typeof dailySummaryResponseSchema>;
+
+/** I07 achievement detail. */
+export const achievementDetailResponseSchema = z.object({
+  key: z.string(),
+  title: z.string(),
+  unlocked: z.boolean(),
+  unlockedAt: z.string().datetime().nullable(),
+  metadata: z.record(z.union([z.string(), z.number()])),
+});
+export type AchievementDetailResponse = z.infer<
+  typeof achievementDetailResponseSchema
+>;

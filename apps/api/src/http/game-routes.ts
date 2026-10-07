@@ -15,23 +15,30 @@
  */
 
 import {
+  achievementDetailResponseSchema,
   achievementsResponseSchema,
   activityDetailResponseSchema,
   activityResponseSchema,
   companionResponseSchema,
   coreMetadataSchema,
+  dailySummaryResponseSchema,
+  dialogueResponseSchema,
+  evolutionResponseSchema,
   gameConfigResponseSchema,
   interactionRequestSchema,
   interactionResponseSchema,
   markReadRequestSchema,
   markReadResponseSchema,
+  notificationPrefsResponseSchema,
+  notificationPrefsSchema,
   notificationsResponseSchema,
   progressionResponseSchema,
   syncResponseSchema,
+  whileYouWereAwayResponseSchema,
   vaultResponseSchema,
   type AchievementDto,
 } from "@gochi/contracts";
-import { and, count, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, isNull, lt, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 
@@ -39,15 +46,26 @@ import { GAME_CONFIG_V1 } from "../engine/config.js";
 import {
   evolutionStageForLevel,
   totalXpToReachLevel,
+  utcDayIndex,
   xpToNextLevel,
 } from "../engine/engine.js";
 import { createCompanion, ingestEvent } from "../engine/apply.js";
 import { closeDb, getDb } from "../db/client.js";
+import { env } from "../env.js";
+import {
+  normalizeAndValidate,
+  orderEvents,
+} from "../ingestion/pipeline.js";
+import { defaultRpcHistoryAdapter } from "../ingestion/rpc-history.js";
+import { DEFAULT_PREFS } from "../notifications/prefs.js";
+import { fetchTokenBalances } from "../core/balances.js";
+import { syncCursors } from "../db/schema.js";
 import {
   achievements,
   activityEvents,
   companions,
   notifications,
+  notificationPrefs,
   stateChanges,
   users,
 } from "../db/schema.js";
@@ -62,6 +80,79 @@ import {
   writeRateLimit,
 } from "./middleware.js";
 import type { Companion } from "../db/schema.js";
+
+/**
+ * §24 P7 ingestion pass. Pulls new onchain history for the user's wallet via
+ * the RPC adapter (Helius once a key is configured), records each raw event as
+ * a pending `activity_events` row, and advances the sync cursor.
+ *
+ * Rows are *recorded*, not applied — the drain loop below applies them through
+ * `ingestEvent`, which is the single engine path. The unique idempotency key
+ * makes re-ingestion of the same signature a no-op rather than an error.
+ */
+async function ingestFromChain(userId: string): Promise<void> {
+  const db = getDb();
+  const [user] = await db
+    .select({ walletAddress: users.walletAddress })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  if (!user?.walletAddress) return;
+
+  const [cursorRow] = await db
+    .select()
+    .from(syncCursors)
+    .where(eq(syncCursors.userId, userId))
+    .limit(1);
+  const cursor = cursorRow?.lastSlot ?? null;
+
+  const adapter = env.heliusApiKey
+    ? new (await import("../ingestion/helius.js")).HeliusAdapter(
+        env.heliusApiKey,
+      )
+    : defaultRpcHistoryAdapter(env.solanaRpcUrl);
+
+  const raws = await adapter.fetchRecent(user.walletAddress, cursor, 50);
+  const network = env.solanaRpcUrl.includes("mainnet") ? "mainnet" : "devnet";
+
+  const orderedRaws = orderEvents(
+    raws.map((raw) => ({ ...raw, timestamp: raw.blockTime ?? raw.ingestedAt })),
+  );
+  const normalizedBySignature = new Map(
+    raws.map((raw, i) => [raw.signature, normalizeAndValidate(raw, network, adapter.name)]),
+  );
+  const ordered = orderedRaws.map((raw) => ({
+    raw,
+    norm: normalizedBySignature.get(raw.signature)!,
+  }));
+
+  let maxSlot = cursor ?? 0;
+  for (const { raw, norm } of ordered) {
+    if (raw.slot != null && raw.slot > maxSlot) maxSlot = raw.slot;
+    if (!norm.ok) continue;
+    await db
+      .insert(activityEvents)
+      .values({
+        userId,
+        signature: raw.signature,
+        slot: raw.slot ?? undefined,
+        eventType: norm.out.event.type,
+        source: norm.out.event.source,
+        payload: norm.out.event as unknown as Record<string, unknown>,
+        occurredAt: new Date(norm.out.event.timestamp * 1000),
+        idempotencyKey: norm.out.idempotencyKey,
+      })
+      .onConflictDoNothing({ target: activityEvents.idempotencyKey });
+  }
+
+  await db
+    .insert(syncCursors)
+    .values({ userId, walletAddress: user.walletAddress, lastSlot: maxSlot })
+    .onConflictDoUpdate({
+      target: syncCursors.userId,
+      set: { lastSlot: maxSlot, updatedAt: new Date() },
+    });
+}
 
 export const gameRoutes = new Hono<AppEnv>();
 
@@ -159,9 +250,20 @@ gameRoutes.post("/companion/sync", writeRateLimit, async (c) => {
     const userId = c.get("userId");
     await requireCompanion(userId);
 
-    // Apply every event that is recorded but not yet processed. Ingestion is P7;
-    // this reconciles whatever has arrived, which is what §24.5 asks for when two
-    // updates conflict.
+    // §24: first pull new history from the chain, then process pending rows.
+    // Ingestion is best-effort — an RPC outage must not block reconciliation
+    // of events that already landed. Skipped under Vitest: tests seed their own
+    // deterministic rows and a live RPC fetch would inject devnet noise into
+    // them.
+    if (process.env.NODE_ENV !== "test") {
+      try {
+        await ingestFromChain(userId);
+      } catch (error) {
+        console.error("[sync] onchain ingestion failed:", error);
+      }
+    }
+
+    // Apply every event that is recorded but not yet processed.
     const pending = await getDb()
       .select()
       .from(activityEvents)
@@ -193,6 +295,10 @@ gameRoutes.post("/companion/sync", writeRateLimit, async (c) => {
           timestamp: Math.floor(event.occurredAt.getTime() / 1000),
           source: event.source ?? undefined,
           signature: event.signature ?? undefined,
+          // Restore the side-channel fields ingestion stashed on the row —
+          // the engine no-ops a SECURITY_EVENT without its signal.
+          shieldSignal: (event.payload as { shieldSignal?: "confirmed" | "inferred" | "unknown" })?.shieldSignal,
+          assetCount: (event.payload as { assetCount?: number })?.assetCount,
         },
       });
 
@@ -588,6 +694,114 @@ gameRoutes.post("/notifications/read", writeRateLimit, async (c) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /v1/dialogue  and  GET|PUT /v1/notification-prefs
+// ---------------------------------------------------------------------------
+
+/**
+ * §8 thread. Reads the same rows the engine wrote as `type = 'dialogue'`, so
+ * there is exactly one store behind both the notification feed and the chat.
+ */
+gameRoutes.get("/dialogue", async (c) => {
+  try {
+    const userId = c.get("userId");
+    const rows = await getDb()
+      .select({
+        id: notifications.id,
+        title: notifications.title,
+        body: notifications.body,
+        payload: notifications.payload,
+        readAt: notifications.readAt,
+        createdAt: notifications.createdAt,
+      })
+      .from(notifications)
+      .where(and(eq(notifications.userId, userId), eq(notifications.type, "dialogue")))
+      .orderBy(desc(notifications.createdAt))
+      .limit(50);
+
+    const messages = rows.map((r) => ({
+      id: r.id,
+      templateKey: String((r.payload as { templateKey?: string })?.templateKey ?? r.title),
+      body: r.body,
+      readAt: r.readAt?.toISOString() ?? null,
+      createdAt: r.createdAt.toISOString(),
+    }));
+
+    return c.json(
+      dialogueResponseSchema.parse({
+        messages,
+        // §8.4 conversation context: what the latest line was reacting to.
+        lastTrigger: messages[0]
+          ? { templateKey: messages[0].templateKey, createdAt: messages[0].createdAt }
+          : null,
+      }),
+      200,
+    );
+  } catch (error) {
+    return fail(c, error);
+  }
+});
+
+/** §28.2 preferences. Absent row means defaults, so this never 404s. */
+gameRoutes.get("/notification-prefs", async (c) => {
+  try {
+    const userId = c.get("userId");
+    const [row] = await getDb()
+      .select()
+      .from(notificationPrefs)
+      .where(eq(notificationPrefs.userId, userId))
+      .limit(1);
+
+    return c.json(
+      notificationPrefsResponseSchema.parse({
+        prefs: row
+          ? {
+              systemEnabled: row.systemEnabled,
+              dialogueEnabled: row.dialogueEnabled,
+              quietStartHour: row.quietStartHour,
+              quietEndHour: row.quietEndHour,
+              dailyCap: row.dailyCap,
+            }
+          : DEFAULT_PREFS,
+      }),
+      200,
+    );
+  } catch (error) {
+    return fail(c, error);
+  }
+});
+
+gameRoutes.put("/notification-prefs", writeRateLimit, async (c) => {
+  try {
+    const userId = c.get("userId");
+    const body = notificationPrefsSchema.parse(await c.req.json());
+
+    const [row] = await getDb()
+      .insert(notificationPrefs)
+      .values({ userId, ...body })
+      .onConflictDoUpdate({
+        target: notificationPrefs.userId,
+        set: { ...body, updatedAt: new Date() },
+      })
+      .returning();
+
+    return c.json(
+      notificationPrefsResponseSchema.parse({
+        prefs: {
+          systemEnabled: row.systemEnabled,
+          dialogueEnabled: row.dialogueEnabled,
+          quietStartHour: row.quietStartHour,
+          quietEndHour: row.quietEndHour,
+          dailyCap: row.dailyCap,
+        },
+      }),
+      200,
+    );
+  } catch (error) {
+    return fail(c, error);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // POST /v1/companion/interaction
 // ---------------------------------------------------------------------------
 
@@ -670,6 +884,14 @@ gameRoutes.get("/vault", async (c) => {
       .where(eq(users.id, row.userId))
       .limit(1);
 
+    // §9.2 summaries. The wallet may be absent (SIWS-only account), in which
+    // case there is nothing to read and the vault says so rather than showing
+    // zeroes for a wallet that was never connected.
+    const walletAddress = identity[0]?.walletAddress ?? null;
+    const balances = walletAddress
+      ? await fetchTokenBalances(env.solanaRpcUrl, walletAddress)
+      : { available: false, tokens: [] };
+
     return c.json(
       vaultResponseSchema.parse({
         companion: {
@@ -683,6 +905,7 @@ gameRoutes.get("/vault", async (c) => {
           seekerId: identity[0]?.seekerId ?? null,
           genesisVerified: identity[0]?.genesisVerified ?? false,
         },
+        balances,
         activity: {
           totalEvents: totals[0]?.n ?? 0,
           recent: recent.map((e) => ({
@@ -817,5 +1040,314 @@ function publicBaseUrl(c: { req: { url: string } }): string {
     return "https://gochi.app";
   }
 }
+
+// ---------------------------------------------------------------------------
+// §26 evolution, §27 While You Were Away, §27.3 daily summary, I07 detail
+// ---------------------------------------------------------------------------
+
+/**
+ * Deltas accumulated over a window of state changes.
+ *
+ * §27 asks for what happened *while the user was away*, and the audit trail
+ * (`state_changes`, written on every applied event) is the only honest source
+ * for it: it records before/after snapshots, so XP, energy, levels and evolution
+ * are measured rather than reconstructed from event types we might misclassify.
+ */
+interface AwayTotals {
+  xpGained: number
+  energyGained: number
+  levelsGained: number
+  swapEvents: number
+  stakingEvents: number
+  interactionCount: number
+  shieldChanges: number
+  evolutionFrom: number | null
+  evolutionTo: number | null
+}
+
+function emptyTotals(): AwayTotals {
+  return {
+    xpGained: 0,
+    energyGained: 0,
+    levelsGained: 0,
+    swapEvents: 0,
+    stakingEvents: 0,
+    interactionCount: 0,
+    shieldChanges: 0,
+    evolutionFrom: null,
+    evolutionTo: null,
+  }
+}
+
+/** Walk the ordered snapshots, accumulating differences rather than absolutes. */
+function accumulate(rows: typeof stateChanges.$inferSelect[]): AwayTotals {
+  const totals = emptyTotals()
+  for (const row of rows) {
+    const before = (row.beforeState ?? {}) as Record<string, number | string | null>
+    const after = (row.afterState ?? {}) as Record<string, number | string | null>
+    const num = (v: unknown) => (typeof v === "number" ? v : 0)
+
+    totals.xpGained += Math.max(0, num(after.xp) - num(before.xp))
+    totals.energyGained += Math.max(0, num(after.energy) - num(before.energy))
+    totals.levelsGained += Math.max(0, num(after.level) - num(before.level))
+
+    if (row.reason === "SWAP") totals.swapEvents += 1
+    else if (row.reason === "STAKE_DETECTED") totals.stakingEvents += 1
+    else if (row.reason === "INTERACTION") totals.interactionCount += 1
+    else if (row.reason === "SECURITY_EVENT") totals.shieldChanges += 1
+
+    if (num(after.evolutionStage) !== num(before.evolutionStage)) {
+      totals.evolutionFrom ??= num(before.evolutionStage)
+      totals.evolutionTo = num(after.evolutionStage)
+    }
+  }
+  return totals
+}
+
+/** §27.3 authored summary block. */
+function summaryLines(t: AwayTotals): string[] {
+  const lines: string[] = []
+  if (t.xpGained > 0) lines.push(`+${t.xpGained} XP`)
+  if (t.energyGained > 0) lines.push(`+${t.energyGained} Energy`)
+  if (t.levelsGained > 0) {
+    lines.push(`+${t.levelsGained} Level${t.levelsGained > 1 ? "s" : ""}`)
+  }
+  if (t.swapEvents > 0) {
+    lines.push(`${t.swapEvents} Swap event${t.swapEvents > 1 ? "s" : ""}`)
+  }
+  if (t.stakingEvents > 0) {
+    lines.push(`${t.stakingEvents} Staking update${t.stakingEvents > 1 ? "s" : ""}`)
+  }
+  return lines
+}
+
+gameRoutes.get("/evolution", async (c) => {
+  try {
+    const row = await requireCompanion(c.get("userId"));
+    const config = GAME_CONFIG_V1;
+    const thresholds = config.evolutionThresholds;
+
+    const milestones = thresholds.map((atLevel, index) => {
+      const stage = index + 1;
+      const previous = index === 0 ? 1 : thresholds[index - 1];
+      const span = Math.max(1, atLevel - previous);
+      return {
+        stage,
+        atLevel,
+        unlocked: row.level >= atLevel,
+        progressPercent: Math.max(
+          0,
+          Math.min(100, Math.round(((row.level - previous) / span) * 100)),
+        ),
+      };
+    });
+
+    return c.json(
+      evolutionResponseSchema.parse({
+        currentStage: evolutionStageForLevel(row.level, config),
+        nextStageAtLevel: thresholds.find((t) => t > row.level) ?? null,
+        milestones,
+      }),
+      200,
+    );
+  } catch (error) {
+    return fail(c, error);
+  }
+});
+
+gameRoutes.get("/while-you-were-away", async (c) => {
+  try {
+    const userId = c.get("userId");
+    const companion = await requireCompanion(userId);
+
+    const [user] = await getDb()
+      .select({ lastSeenAt: users.lastSeenAt })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    // Never summarised before the companion existed, and never before the user
+    // has actually been away: first sync and an active session both read better
+    // as "nothing happened".
+    const since = user?.lastSeenAt ?? null;
+    if (!since || since.getTime() <= companion.createdAt.getTime()) {
+      return c.json(
+        whileYouWereAwayResponseSchema.parse({
+          hasSummary: false,
+          since: null,
+          lines: [],
+          xpGained: 0,
+          energyGained: 0,
+          levelsGained: 0,
+          swapEvents: 0,
+          stakingEvents: 0,
+          evolutionStage: null,
+          highlights: [],
+        }),
+        200,
+      );
+    }
+
+    const rows = await getDb()
+      .select()
+      .from(stateChanges)
+      .where(
+        and(
+          eq(stateChanges.companionId, companion.id),
+          gt(stateChanges.createdAt, since),
+        ),
+      )
+      .orderBy(stateChanges.createdAt);
+
+    const totals = accumulate(rows);
+    const lines = summaryLines(totals);
+    const evolved =
+      totals.evolutionTo != null && totals.evolutionTo > (totals.evolutionFrom ?? 1);
+
+    // §27.2 ranking, most meaningful first.
+    const highlights = [] as {
+      kind: "level_up" | "evolution" | "activity_burst" | "staking" | "shield_change" | "xp_change";
+      title: string;
+      detail: string;
+      count: number;
+    }[]
+    if (evolved) {
+      highlights.push({
+        kind: "evolution",
+        title: `Evolved to Stage ${totals.evolutionTo}`,
+        detail: "New form unlocked.",
+        count: 1,
+      })
+    }
+    if (totals.levelsGained > 0) {
+      highlights.push({
+        kind: "level_up",
+        title: `Level ${totals.levelsGained} gained`,
+        detail: `Now level ${companion.level}.`,
+        count: totals.levelsGained,
+      })
+    }
+    if (totals.swapEvents > 0) {
+      highlights.push({
+        kind: "activity_burst",
+        title: `${totals.swapEvents} swap${totals.swapEvents > 1 ? "s" : ""}`,
+        detail: "Activity while you were away.",
+        count: totals.swapEvents,
+      })
+    }
+    if (totals.stakingEvents > 0) {
+      highlights.push({
+        kind: "staking",
+        title: `${totals.stakingEvents} staking update${totals.stakingEvents > 1 ? "s" : ""}`,
+        detail: "Staking state changed.",
+        count: totals.stakingEvents,
+      })
+    }
+    if (totals.shieldChanges > 0) {
+      highlights.push({
+        kind: "shield_change",
+        title: "Shield activity",
+        detail: "Shield state changed.",
+        count: totals.shieldChanges,
+      })
+    }
+    if (totals.xpGained > 0) {
+      highlights.push({
+        kind: "xp_change",
+        title: `+${totals.xpGained} XP`,
+        detail: "Progress banked.",
+        count: totals.xpGained,
+      })
+    }
+
+    return c.json(
+      whileYouWereAwayResponseSchema.parse({
+        hasSummary: lines.length > 0,
+        since: since.toISOString(),
+        lines,
+        xpGained: totals.xpGained,
+        energyGained: totals.energyGained,
+        levelsGained: totals.levelsGained,
+        swapEvents: totals.swapEvents,
+        stakingEvents: totals.stakingEvents,
+        evolutionStage: evolved ? totals.evolutionTo : null,
+        highlights,
+      }),
+      200,
+    );
+  } catch (error) {
+    return fail(c, error);
+  }
+});
+
+gameRoutes.get("/daily-summary", async (c) => {
+  try {
+    const userId = c.get("userId");
+    const companion = await requireCompanion(userId);
+    const now = new Date();
+    const dayStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+
+    const rows = await getDb()
+      .select()
+      .from(stateChanges)
+      .where(
+        and(
+          eq(stateChanges.companionId, companion.id),
+          gt(stateChanges.createdAt, dayStart),
+        ),
+      );
+
+    const totals = accumulate(rows);
+    const lines = summaryLines(totals);
+    if (totals.interactionCount > 0) {
+      lines.push(
+        `${totals.interactionCount} interaction${totals.interactionCount > 1 ? "s" : ""}`,
+      );
+    }
+
+    return c.json(
+      dailySummaryResponseSchema.parse({
+        dayIndex: utcDayIndex(Math.floor(now.getTime() / 1000)),
+        xpGained: totals.xpGained,
+        energyGained: totals.energyGained,
+        swapEvents: totals.swapEvents,
+        stakingEvents: totals.stakingEvents,
+        interactionCount: totals.interactionCount,
+        lines,
+      }),
+      200,
+    );
+  } catch (error) {
+    return fail(c, error);
+  }
+});
+
+gameRoutes.get("/achievements/:key", async (c) => {
+  try {
+    const userId = c.get("userId");
+    const key = c.req.param("key");
+
+    const [row] = await getDb()
+      .select()
+      .from(achievements)
+      .where(and(eq(achievements.userId, userId), eq(achievements.achievementKey, key)))
+      .limit(1);
+
+    return c.json(
+      achievementDetailResponseSchema.parse({
+        key,
+        title: ACHIEVEMENT_CATALOGUE[key] ?? key,
+        unlocked: Boolean(row),
+        unlockedAt: row?.unlockedAt.toISOString() ?? null,
+        metadata: (row?.metadata ?? {}) as Record<string, string | number>,
+      }),
+      200,
+    );
+  } catch (error) {
+    return fail(c, error);
+  }
+});
 
 export { closeDb };

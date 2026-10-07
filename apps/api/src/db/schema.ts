@@ -440,6 +440,48 @@ export const notifications = pgTable(
   }),
 );
 
+/**
+ * Notification preferences — §28.2. One row per user; absent means defaults.
+ * Applied server-side before any row is written, so a disabled category never
+ * produces a row, a daily cap caps stored rows, and quiet hours suppress
+ * normal-priority lines without touching critical ones.
+ */
+export const notificationPrefs = pgTable("notification_prefs", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  /** System (level-up, shield, sync) notifications. Critical bypasses toggles. */
+  systemEnabled: boolean("system_enabled").notNull().default(true),
+  /** Companion chatter (§8 dialogue lines). */
+  dialogueEnabled: boolean("dialogue_enabled").notNull().default(true),
+  /** Local hour (0-23) at which quiet hours begin, inclusive. NULL = off. */
+  quietStartHour: integer("quiet_start_hour"),
+  /** Local hour (0-23) at which quiet hours end, exclusive. */
+  quietEndHour: integer("quiet_end_hour"),
+  /** Max non-critical notifications per UTC day. */
+  dailyCap: integer("daily_cap").notNull().default(20),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
+ * Ingestion cursors — P7. One row per user: the last slot ingestion fully
+ * processed, so a re-sync never refetches settled history and backfill is
+ * incremental rather than from-scratch.
+ */
+export const syncCursors = pgTable("sync_cursors", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  walletAddress: text("wallet_address").notNull(),
+  /** Last onchain slot fully ingested. 0 = never synced. */
+  lastSlot: bigint("last_slot", { mode: "number" }).notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type SiwsNonce = typeof siwsNonces.$inferSelect;
@@ -451,3 +493,5 @@ export type ActivityEvent = typeof activityEvents.$inferSelect;
 export type Achievement = typeof achievements.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
 export type StateChange = typeof stateChanges.$inferSelect;
+export type SyncCursor = typeof syncCursors.$inferSelect;
+export type NotificationPrefs = typeof notificationPrefs.$inferSelect;

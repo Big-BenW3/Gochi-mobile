@@ -8,6 +8,20 @@
       "when": 1791175445148,
       "tag": "0000_p2_game_state",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791313749816,
+      "tag": "0001_amazing_black_queen",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791316767339,
+      "tag": "0002_mute_microchip",
+      "breakpoints": true
     }
   ]
 }

@@ -353,13 +353,27 @@ describe("GET /v1/vault", () => {
     expect(body.ownership.walletAddress).toBe(WALLET);
   });
 
-  it("carries no balance field", async () => {
+  it("shows raw balances, never a portfolio value (§9.2 read, §9.3 respected)", async () => {
     const body = (await (await get_("/v1/vault")).json()) as Record<
       string,
       any
     >;
+
+    // P10 adds holdings, and with them the temptation to attach a price. A
+    // `value`/`priceUsd` field would be a portfolio the app cannot honestly
+    // produce, so the assertion is that neither exists.
     expect(body.balance).toBeUndefined();
-    expect(body.balances).toBeUndefined();
+    expect(body.value).toBeUndefined();
+    expect(body.priceUsd).toBeUndefined();
+
+    // Amounts are strings with an explicit scale, and unavailability is stated
+    // rather than shown as a zero balance.
+    expect(typeof body.balances.available).toBe("boolean");
+    expect(Array.isArray(body.balances.tokens)).toBe(true);
+    for (const token of body.balances.tokens as Array<Record<string, unknown>>) {
+      expect(typeof token.amount).toBe("string");
+      expect(typeof token.decimals).toBe("number");
+    }
   });
 });
 

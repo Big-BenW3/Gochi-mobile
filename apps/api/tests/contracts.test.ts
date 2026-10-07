@@ -117,6 +117,7 @@ describe("vault (spec 9.3)", () => {
       metadataUri: null,
     },
     ownership: { walletAddress: null, seekerId: null, genesisVerified: false },
+    balances: { available: false, tokens: [] },
     activity: { totalEvents: 0, recent: [] },
     custodyNotice:
       "Your wallet holds your assets. Gochi does not take custody." as const,
@@ -135,13 +136,29 @@ describe("vault (spec 9.3)", () => {
     ).toBe(false);
   });
 
-  it("carries no balance or amount field", () => {
-    // Section 9.3: the app must not imply custody. A balance field would be the
-    // easiest way to imply it, so its absence is asserted rather than assumed.
+  it("shows holdings without attaching a value to them", () => {
+    // P10 added balances (spec 9.2 asks for token summaries). What must stay
+    // absent is anything that turns holdings into a portfolio the app prices:
+    // a top-level total, or any fiat value per token. Section 9.3 is about not
+    // implying custody, and a priced portfolio is how that implication creeps
+    // back in.
     const keys = Object.keys(c.vaultResponseSchema.shape);
+    expect(keys).toContain("balances");
     expect(keys).not.toContain("balance");
-    expect(keys).not.toContain("balances");
     expect(keys).not.toContain("amount");
+    expect(keys).not.toContain("value");
+    expect(keys).not.toContain("totalValue");
+
+    // A token carries an amount and a scale, and nothing that looks like money.
+    const tokenKeys = Object.keys(
+      (c.vaultResponseSchema.shape as { balances: { shape: Record<string, unknown> } })
+        .balances.shape.tokens
+        ? ((c.vaultResponseSchema.shape as never as { balances: { shape: { tokens: { _def: { shape: Record<string, unknown> } } } } }).balances.shape.tokens._def.shape)
+        : {},
+    );
+    expect(tokenKeys).toContain("amount");
+    expect(tokenKeys).not.toContain("priceUsd");
+    expect(tokenKeys).not.toContain("valueUsd");
   });
 });
 

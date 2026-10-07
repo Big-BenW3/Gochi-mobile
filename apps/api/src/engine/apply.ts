@@ -20,7 +20,7 @@
  * cannot deduplicate. That is what this module is for.
  */
 
-import { and, eq, gte, isNotNull, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
 
 import { logger } from "../core/logging.js";
 import { closeDb, getDb } from "../db/client.js";
@@ -29,9 +29,20 @@ import {
   activityEvents,
   companions,
   notifications,
+  notificationPrefs,
   stateChanges,
   users,
 } from "../db/schema.js";
+import { decideDialogue, BURST_WINDOW_MS } from "../dialogue/guard.js";
+import { renderLine } from "../dialogue/templates.js";
+import {
+  allowsNotification,
+  capReached,
+  DEFAULT_PREFS,
+  type Category,
+  type Prefs,
+  type Priority,
+} from "../notifications/prefs.js";
 import type { Companion } from "../db/schema.js";
 import {
   configForVersion,
@@ -149,6 +160,62 @@ export type IngestResult =
   | { ok: true; outcome: "applied" | "noop"; result: ProcessResult }
   /** The idempotency key was already processed. Section 55 scenario 5. */
   | { ok: false; reason: "duplicate"; existingEventId: string };
+
+/** The drizzle transaction handle, as the callback receives it. */
+type Tx = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
+
+/**
+ * §28.2 gate, evaluated inside the ingestion transaction so the cap and the row
+ * it protects cannot disagree. Critical priorities always pass; everything else
+ * respects category toggles, quiet hours and the daily cap.
+ */
+async function mayNotify(
+  tx: Tx,
+  userId: string,
+  priority: Priority,
+  category: Category,
+  now: Date,
+): Promise<boolean> {
+  const [row] = await tx
+    .select()
+    .from(notificationPrefs)
+    .where(eq(notificationPrefs.userId, userId))
+    .limit(1);
+
+  const prefs: Prefs = row
+    ? {
+        systemEnabled: row.systemEnabled,
+        dialogueEnabled: row.dialogueEnabled,
+        quietStartHour: row.quietStartHour,
+        quietEndHour: row.quietEndHour,
+        dailyCap: row.dailyCap,
+      }
+    : DEFAULT_PREFS;
+
+  if (!allowsNotification(prefs, priority, category, now.getUTCHours())) {
+    return false;
+  }
+
+  // The cap counts what is already stored today, critical excluded — it counts
+  // non-critical rows only, so a muted-then-unmuted day cannot hide level-ups.
+  if (priority === "critical") return true;
+
+  const dayStart = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
+  const today = await tx
+    .select({ n: count() })
+    .from(notifications)
+    .where(
+      and(
+        eq(notifications.userId, userId),
+        gte(notifications.createdAt, dayStart),
+        sql`coalesce((${notifications.payload} ->> 'priority'), 'normal') <> 'critical'`,
+      ),
+    );
+
+  return !capReached(prefs, today[0]?.n ?? 0);
+}
 
 /**
  * Ingest one normalized event and apply it, atomically.
@@ -306,26 +373,80 @@ export async function ingestEvent(params: {
 
       if (outcome.notification) {
         const n = outcome.notification;
-        await tx.insert(notifications).values({
-          userId,
-          type: n.type,
-          title: n.title,
-          body: n.body,
-          payload: { priority: n.priority, eventId },
-        });
+        if (await mayNotify(tx, userId, n.priority, "system", now)) {
+          await tx.insert(notifications).values({
+            userId,
+            type: n.type,
+            title: n.title,
+            body: n.body,
+            payload: { priority: n.priority, eventId },
+          });
+        }
       }
 
-      if (outcome.dialogue) {
-        // Dialogue is a queue the client drains; stored as a notification with a
-        // distinct type so one table serves both feeds and the ordering between
-        // a line and a level-up banner is preserved.
-        await tx.insert(notifications).values({
-          userId,
-          type: "dialogue",
-          title: outcome.dialogue.templateKey,
-          body: "",
-          payload: { templateKey: outcome.dialogue.templateKey, eventId },
-        });
+      if (outcome.dialogue && (await mayNotify(tx, userId, "normal", "dialogue", now))) {
+        // §8.4 no-spam: the engine says which line is *warranted*; this decides
+        // whether saying it now adds anything. A burst of swaps folds into one
+        // summary carrying the real count instead of N near-identical lines.
+        const templateKey = outcome.dialogue.templateKey;
+        const recentRows = await tx
+          .select({
+            id: notifications.id,
+            title: notifications.title,
+            payload: notifications.payload,
+            createdAt: notifications.createdAt,
+          })
+          .from(notifications)
+          .where(and(eq(notifications.userId, userId), eq(notifications.type, "dialogue")))
+          .orderBy(desc(notifications.createdAt))
+          .limit(20);
+
+        const recent = recentRows.map((r) => ({
+          templateKey: String((r.payload as { templateKey?: string })?.templateKey ?? r.title),
+          createdAt: r.createdAt,
+        }));
+
+        const swapsInWindow = await tx
+          .select({ n: count() })
+          .from(activityEvents)
+          .where(
+            and(
+              eq(activityEvents.userId, userId),
+              eq(activityEvents.eventType, "SWAP"),
+              gte(activityEvents.occurredAt, new Date(now.getTime() - BURST_WINDOW_MS)),
+            ),
+          );
+
+        const decision = decideDialogue(templateKey, recent, swapsInWindow[0]?.n ?? 1, now);
+
+        if (decision.action === "post") {
+          await tx.insert(notifications).values({
+            userId,
+            type: "dialogue",
+            title: templateKey,
+            // Authored line (§8.3). Title stays the key so the client can still
+            // group by template without parsing prose.
+            body: renderLine(templateKey, recent.length),
+            payload: { templateKey, eventId },
+          });
+        } else if (decision.action === "burst") {
+          const body = `You made ${decision.count} moves. I definitely noticed.`;
+          const open = recentRows.find(
+            (r) => (r.payload as { templateKey?: string })?.templateKey === "swap_burst",
+          );
+          if (open) {
+            await tx.update(notifications).set({ body }).where(eq(notifications.id, open.id));
+          } else {
+            await tx.insert(notifications).values({
+              userId,
+              type: "dialogue",
+              title: "swap_burst",
+              body,
+              payload: { templateKey: "swap_burst", eventId },
+            });
+          }
+        }
+        // "suppress" writes nothing — the intent was recorded, the chatter was not.
       }
 
       // --- 6. Mark processed, recording the XP actually awarded. -----------
