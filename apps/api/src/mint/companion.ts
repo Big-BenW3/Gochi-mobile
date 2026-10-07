@@ -70,6 +70,64 @@ export class MintUnavailable extends Error {
 /** The Umi shape this module uses, so callers need not import umi themselves. */
 export type Umi = ReturnType<typeof createBaseUmi>;
 
+/**
+ * Load the payer's 64 secret bytes from whichever source is configured.
+ *
+ * Returns null when neither is set — the caller decides that this is fatal, so
+ * that a missing payer reads as one clear error instead of three.
+ *
+ * A Solana CLI keyfile is a JSON array of 64 bytes, so the base64 form encodes
+ * that JSON text, not the raw bytes. Decoding to text first (rather than treating
+ * the decoded value as bytes) is what keeps a keyfile round-tripping: a host
+ * configured with `base64 -w0 ~/.config/solana/id.json` gets the same array the
+ * file would have parsed to.
+ */
+function readPayerSecret(): Uint8Array | null {
+  const encoded = env.payerSecretKeyBase64;
+  if (encoded) {
+    let decoded: string;
+    try {
+      decoded = Buffer.from(encoded, "base64").toString("utf8");
+    } catch (error) {
+      throw new MintUnavailable("PAYER_SECRET_KEY_BASE64 is not valid base64.", {
+        cause: error,
+      });
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(decoded);
+    } catch (error) {
+      throw new MintUnavailable(
+        "PAYER_SECRET_KEY_BASE64 did not decode to a JSON keyfile. Produce it " +
+          "with: base64 -w0 <path-to-keyfile.json>",
+        { cause: error },
+      );
+    }
+
+    if (!Array.isArray(parsed) || parsed.length !== 64) {
+      throw new MintUnavailable(
+        "Payer keypair is not a 64-byte Solana keyfile.",
+      );
+    }
+    return Uint8Array.from(parsed as number[]);
+  }
+
+  const path = env.payerKeypairPath;
+  if (!path) return null;
+  if (!existsSync(path)) {
+    throw new MintUnavailable(
+      "Payer keypair not found at the configured path.",
+    );
+  }
+
+  const secret = JSON.parse(readFileSync(path, "utf8")) as number[];
+  if (!Array.isArray(secret) || secret.length !== 64) {
+    throw new MintUnavailable("Payer keypair is not a 64-byte Solana keyfile.");
+  }
+  return Uint8Array.from(secret);
+}
+
 let umiInstance: Umi | null = null;
 let payerKeypair: Keypair | null = null;
 
@@ -85,26 +143,28 @@ export function getPayerUmi(): { umi: Umi; payer: Keypair } {
     return { umi: umiInstance, payer: payerKeypair };
   }
 
-  const path = env.payerKeypairPath;
-  if (!path) {
+  /**
+   * The payer keypair comes from one of two places, in order.
+   *
+   * A hosted container has no keypair *file*, and shipping one in the image or
+   * the repo would put a funded wallet in git history. So the deployment path is
+   * `PAYER_SECRET_KEY_BASE64` — the same Solana keyfile, base64'd, supplied as an
+   * environment variable and decoded in memory. The bytes are never written to
+   * disk and never logged.
+   *
+   * The file path stays supported for local development, where a file is the
+   * natural thing to have and reading it keeps secrets out of shell history.
+   */
+  const secret = readPayerSecret();
+  if (!secret) {
     throw new MintUnavailable(
-      "PAYER_KEYPAIR_PATH is not set, so the API cannot pay for mints. " +
-        "Identity, the engine and every read route work without it.",
-    );
-  }
-  if (!existsSync(path)) {
-    throw new MintUnavailable(
-      "Payer keypair not found at the configured path.",
+      "No mint payer configured. Set PAYER_SECRET_KEY_BASE64 on a host, or " +
+        "PAYER_KEYPAIR_PATH locally. Identity, the engine and every read route " +
+        "work without it.",
     );
   }
 
-  // Solana CLI keyfiles are a JSON array of 64 bytes.
-  const secret = JSON.parse(readFileSync(path, "utf8")) as number[];
-  if (!Array.isArray(secret) || secret.length !== 64) {
-    throw new MintUnavailable("Payer keypair is not a 64-byte Solana keyfile.");
-  }
-
-  const keypair = Keypair.fromSecretKey(Uint8Array.from(secret));
+  const keypair = Keypair.fromSecretKey(secret);
 
   // web3jsEddsa signs through web3.js, and signerIdentity bridges the keypair into
   // umi's signer interface. `true` also sets the payer: a umi with an identity but

@@ -61,7 +61,6 @@ loadEnvFile();
 type RequiredVar =
   | "DATABASE_URL"
   | "API_JWT_SECRET"
-  | "EXPO_PRIVATE_PRIVY_APP_SECRET"
   | "EXPO_PUBLIC_PRIVY_APP_ID";
 
 /**
@@ -76,7 +75,6 @@ function collectMissing(keys: readonly RequiredVar[]): string[] {
 const missing = collectMissing([
   "DATABASE_URL",
   "API_JWT_SECRET",
-  "EXPO_PRIVATE_PRIVY_APP_SECRET",
   "EXPO_PUBLIC_PRIVY_APP_ID",
 ]);
 
