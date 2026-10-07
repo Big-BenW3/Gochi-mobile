@@ -57,9 +57,22 @@ export class RpcHistoryAdapter implements IngestionAdapter {
       // Cursor is "last processed slot"; skip anything at or before it so a
       // re-sync never re-emits settled history.
       if (cursor != null && sig.slot != null && sig.slot <= cursor) continue
-      const tx = await this.fetcher.getParsedTransaction(sig.signature, {
-        maxSupportedTransactionVersion: 0,
-      })
+
+      // `maxSupportedTransactionVersion: 1` matters: versioned transactions are
+      // now the majority on mainnet, and asking for 0 makes the RPC *reject*
+      // them with -32015. That error is thrown, not returned, so an older
+      // version of this loop aborted the whole batch on the first version-1
+      // transaction and a wallet's recent activity — exactly what the demo
+      // depends on — silently vanished.
+      let tx: Awaited<ReturnType<HistoryFetcher['getParsedTransaction']>>
+      try {
+        tx = await this.fetcher.getParsedTransaction(sig.signature, {
+          maxSupportedTransactionVersion: 1,
+        })
+      } catch (error) {
+        // One unreadable transaction must not cost the rest of the batch.
+        continue
+      }
       if (!tx) continue
       const instructions = tx.transaction.message.instructions
       const programIds = instructions

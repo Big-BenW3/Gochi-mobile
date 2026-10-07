@@ -72,3 +72,6 @@ apps/api/drizzle/meta/_journal.json.tmp
 
 # Local artifacts
 *.log
+
+prompt.md
+PLAN.md

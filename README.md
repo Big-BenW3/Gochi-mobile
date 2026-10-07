@@ -1,76 +1,105 @@
-# kit-expo-privy
+# Gochi
 
-This is an [Expo](https://expo.dev) project pre-configured with [Uniwind](https://uniwind.dev/) for styling and Solana libraries.
+A persistent cyber companion on Solana Mobile. Your companion's state, personality
+and progression are driven by your real onchain activity — it reads what actually
+happened in your wallet, not what you told it happened.
 
-## Technologies
+<!-- Quick orientation: this README is the submission. `docs/TEST.md` is the
+     phone-side checklist, `docs/ARCHITECTURE.md` is how it fits together, and
+     `docs/HANDOFF.md` is everything that still needs a key or a decision. -->
 
-- [Expo](https://expo.dev)
-- [Uniwind](https://uniwind.dev/) (Tailwind CSS for React Native)
-- [@solana/kit](https://github.com/solana-labs/solana-web3.js)
-- [@wallet-ui/react-native-kit](https://github.com/wallet-ui/wallet-ui)
+## What it does
 
-## Set up Privy
+- **Reads your wallet, mainnet.** Swaps and staking are detected from real
+  transaction history, then converted into game events by a deterministic engine.
+- **Accumulates progression.** XP, level, energy, aura and combat rating move by
+  server-computed rules. The client never computes progression — a client that
+  could set its own level would make every other rule decorative.
+- **Speaks in character.** Short authored lines, chosen by condition, with
+  cooldown and burst folding so ten swaps in five minutes produce one sentence
+  instead of ten.
+- **Mints an onchain companion.** A Metaplex Core asset in your wallet, with the
+  holder unable to transfer it. Gochi pays the fees; your wallet remains the owner.
 
-1. Log in or sign up at the [Privy dashboard](https://dashboard.privy.io).
-2. On the [organization overview](https://dashboard.privy.io/organization-overview), click `New app`.
-3. Enter your app name, select `Mobile app`, and click `Create app`.
-4. Save the `App ID`, then click `Close`.
-5. Under `User management` in the sidebar, go to `Authentication`.
-6. In the `External wallets` card, enable `SVM (Solana) wallets`.
-7. Go to `App settings` > `Clients`.
-8. Set the app identifier to the `expo.android.package` value from `app.json`.
-9. Save the `Client ID` for the default mobile app client.
-10. Copy `.env.example` to `.env` and set:
-
-```bash
-EXPO_PUBLIC_PRIVY_APP_ID=your-privy-app-id
-EXPO_PUBLIC_PRIVY_CLIENT_ID=your-privy-client-id
-```
-
-Do not put the Privy app secret in `.env`; this Expo app only uses public client-side Privy identifiers.
-
-## Get started
-
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-This steps builds the dependencies for the development client.
+## Running it
 
 ```bash
-npm run android
+# 1. API — reads apps/api/.env
+npm run api:dev            # http://localhost:8787
+
+# 2. App — reads mobile/.env
+cd mobile && npx expo start --dev-client
 ```
 
-In the output, you'll find options to open the app in an Android development build:
+Both `.env` files are documented by the `.env.example` beside them. They are
+independent: the API's environment and the app's environment share nothing.
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-
-This template requires native modules and Mobile Wallet Adapter support, so it does not support Expo Go or iOS simulator.
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Test wallet connections
-
-Follow the [Solana Mobile development setup](https://docs.solanamobile.com/get-started/development-setup) to configure a Seeker or Android emulator for testing Mobile Wallet Adapter flows. For emulator development, install the [Mock MWA Wallet](https://github.com/solana-mobile/mock-mwa-wallet.git) and open it once before connecting from this app.
-
-If wallet connection fails with `java.util.concurrent.CancellationException` or `-1/authorization request declined`, make sure the emulator has a PIN or password set, then restart the mock wallet:
+### Building the APK
 
 ```bash
-adb shell locksettings set-pin 1234
-adb shell am force-stop com.solana.mwallet
+cd mobile/android
+./gradlew assembleDebug --no-parallel --max-workers=1 \
+  -PreactNativeArchitectures=arm64-v8a \
+  -Pkotlin.compiler.execution.strategy=in-process
+adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Open the mock wallet again so it can create and persist its seed, then try connecting from this app.
+Those flags are not optional on a 6GB machine — see `docs/P1.md`.
 
-## Learn more
+## Two things that will bite you
 
-To learn more about developing your project with Expo, look at the following resources:
+Both cost real debugging time, so they are written down.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Uniwind documentation](https://uniwind.dev/): Learn how to style your app with Tailwind CSS.
-- [Solana documentation](https://solana.com/docs): Learn how to build on Solana.
+**The `.env` for the app lives in `mobile/`, not at the repo root.** Expo resolves
+`.env` relative to its own project root. A file at the root is silently ignored:
+the app bundles `undefined` for every `EXPO_PUBLIC_` value and falls back to a
+hardcoded default. That presents as a server problem, not a configuration one.
+
+**A debug build does not bundle JavaScript.** With `expo-dev-client` installed,
+debug variants are treated as debuggable and skip bundling, so the app launches a
+dev client and waits for Metro. On someone else's phone there is no Metro, so it
+shows nothing. `mobile/android/app/build.gradle` sets `debuggableVariants = []` to
+bundle it. Verify with:
+
+```bash
+unzip -l mobile/android/app/build/outputs/apk/debug/app-debug.apk | grep index.android.bundle
+```
+
+## Honesty as a design constraint
+
+Several screens could easily have told a judge something flattering and false.
+They don't, and the constraints are load-bearing rather than stylistic:
+
+- **No security score, anywhere.** Spec §58 names a fabricated one as the worst
+  thing this product could do, because a user seeing "84% secure" makes decisions
+  on a number the app invented. The shield reports only verified activity and
+  states what it could not check.
+- **No portfolio value.** The vault shows raw token amounts with no price. A
+  priced portfolio implies an app that manages money, and §9.3 forbids implying
+  custody.
+- **Staking says "unavailable."** We can see that staking happened; we cannot
+  confirm a current delegation. Claiming one we cannot verify is the same failure
+  in a different costume.
+- **A failed read is not an empty result.** Unavailable balances render as
+  unavailable with a retry, never as zero — zero is a claim about the wallet.
+
+## Layout
+
+```
+apps/api/          Hono API — engine, ingestion, dialogue, minting
+packages/contracts/  zod schemas shared by both sides
+mobile/            Expo app — screens, features, design tokens
+docs/              architecture, testing, handoff, decisions
+```
+
+See `docs/ARCHITECTURE.md` for how a transaction becomes a level-up.
+
+## Tests
+
+```bash
+cd apps/api && npx vitest run
+```
+
+203 tests, ~200 of which are integration tests against a real Neon database, so a
+full run takes 12–20 minutes. `tests/ingestion.test.ts` is pure and finishes in
+seconds if you only want the event-classification rules.
