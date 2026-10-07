@@ -44,9 +44,10 @@ function readEnv(key: string): string | undefined {
   if (fromProcess) return fromProcess;
 
   // Lazily so the CLI still works if the file is absent, e.g. in CI.
-  // Two levels up from apps/api reaches the repo root. (`src/env.ts` needs
-  // three because it sits one directory deeper.)
-  const envPath = resolve(here, "../../.env");
+  // Same file the API reads at runtime (`src/env.ts` reaches it from one
+  // directory deeper), so migrations and the server can never disagree about
+  // which database is configured.
+  const envPath = resolve(here, ".env");
   if (!existsSync(envPath)) return undefined;
 
   for (const line of readFileSync(envPath, "utf8").split("\n")) {

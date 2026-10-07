@@ -15,22 +15,36 @@
  *    treats the prefix as a bug rather than a feature and refuses to load any
  *    variable that carries it.
  *
- * The Privy app secret is the concrete case. It is needed to verify the access
- * token the app presents on `POST /v1/auth/privy`, which happens only here, and
- * it must never reach the handset. It lives under `EXPO_PRIVATE_PRIVY_APP_SECRET`:
- * the `EXPO_` prefix keeps it grouped with its sibling credentials, and the
- * `PRIVATE_` segment marks it as server-side, since Expo's bundler inlines only
- * `EXPO_PUBLIC_` and leaves everything else in the server's environment.
+ * Privy is the concrete case for both halves of this. Verification is
+ * asymmetric: the token is checked against Privy's published JWKS, signed by the
+ * platform rather than the app, so the *only* Privy value the server needs is the
+ * public App ID, used as the JWT audience to reject a token minted for a
+ * different app. That is why `EXPO_PUBLIC_PRIVY_APP_ID` is required here
+ * despite the prefix — it is public by design and already ships in the bundle.
+ *
+ * There is deliberately no Privy app secret. It was once required here and never
+ * read: verification made no authenticated call to Privy, so requiring a secret
+ * only put an unused credential on a public host. A secret would become necessary
+ * the moment this server called a Privy *REST* endpoint, and the variable should
+ * be reintroduced at that point rather than carried in the meantime.
  */
 
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
-/** Repo root, resolved relative to this file rather than to `process.cwd()`. */
-const ENV_PATH = resolve(import.meta.dirname, "../../../.env");
+/**
+ * This service's own `.env`, resolved relative to this file rather than to
+ * `process.cwd()`.
+ *
+ * `apps/api/.env` and not the repo root: the API owns its environment, and so does
+ * the mobile app (`mobile/.env`, which is where Expo looks for it). Neither reads
+ * the other's, so there is no shared file for the two to disagree about, and no
+ * secret that has to be copied between them.
+ */
+const ENV_PATH = resolve(import.meta.dirname, "../.env");
 
 /**
- * Read the repo-root `.env` into `process.env` without overwriting anything the
+ * Read this service's `.env` into `process.env` without overwriting anything the
  * environment already provides.
  *
  * Real environment variables win over the file, so a deployed container can
@@ -83,7 +97,7 @@ if (missing.length > 0) {
     `Gochi API cannot start: missing required environment ${
       missing.length === 1 ? "variable" : "variables"
     } ${missing.join(", ")}.\n` +
-      `Copy .env.example to .env at the repo root and fill them in, or inject ` +
+      `Copy .env.example to .env in apps/api and fill them in, or inject ` +
       `them as real environment variables.`,
   );
 }
@@ -109,10 +123,26 @@ if (publicLeaked.length > 0) {
   );
 }
 
-/** Read a required variable, with the guarantee that it exists. */
+/**
+ * Read a required variable.
+ *
+ * Throws a named error rather than trusting `collectMissing` to have caught it.
+ * That pre-check and the `required()` calls below are two separate lists, and
+ * they did drift: `EXPO_PRIVATE_PRIVY_APP_SECRET` was passed to `required()`
+ * without being listed for pre-checking, so a host that correctly omitted it got
+ * `TypeError: Cannot read properties of undefined (reading 'trim')` from the `!`
+ * assertion instead of a message naming the variable. The `!` was the bug — it
+ * asserted something the code had not actually established.
+ */
 function required(key: RequiredVar): string {
-  // Safe: `collectMissing` already threw for any of these being absent.
-  return process.env[key]!.trim();
+  const value = process.env[key]?.trim();
+  if (!value) {
+    throw new Error(
+      `Gochi API cannot start: ${key} is missing or empty. ` +
+        "Set it in the environment, or in apps/api/.env for local work.",
+    );
+  }
+  return value;
 }
 
 /** Read an optional variable, treating blank as absent. */
@@ -146,24 +176,28 @@ export const env = {
    */
   privyAppId: required("EXPO_PUBLIC_PRIVY_APP_ID"),
 
-  /** Privy App Secret, for verifying the access token on the Privy auth path. */
-  privyAppSecret: required("EXPO_PRIVATE_PRIVY_APP_SECRET"),
-
   /** Helius dashboard key. Required from P7, when activity ingestion begins. */
   heliusApiKey: optional("HELIUS_API_KEY"),
 
   /**
-   * Path to the Solana keypair that pays for companion mints. Required from P4.
+   * The Solana keypair that pays for companion mints, as base64.
    *
-   * Read lazily and validated at the point of use rather than at startup, because
-   * the API must run with no payer configured for identity, the engine and every
-   * read route. Making it a required variable would mean a developer without a
-   * funded devnet keypair could not run the tests at all, and the failure would
-   * arrive at boot rather than at the one route that needs it.
+   * The transport is an env variable rather than a file path because the API has
+   * to run in two places with opposite needs: a laptop, where a keyfile on disk
+   * is natural and keeps the secret out of shell history, and a host, where the
+   * filesystem has no such file and baking one into an image would put a funded
+   * wallet into git history permanently. One variable serves both.
    *
-   * The file is never read into anything but the mint module, and never logged.
+   * A Solana keyfile is a JSON array of 64 bytes, so this is base64 of that JSON
+   * *text* — not of the raw bytes. Produce it with:
+   *
+   *     base64 -w0 ~/.config/solana/id.json
+   *
+   * Read lazily by the mint module and never logged. Optional as a variable so
+   * the API still boots with no payer configured — identity, the engine and every
+   * read route work without one, and minting reports its own failure.
    */
-  payerKeypairPath: optional("PAYER_KEYPAIR_PATH"),
+  payerSecretKeyBase64: optional("PAYER_SECRET_KEY_BASE64"),
 
   /** Solana JSON RPC endpoint. */
   solanaRpcUrl: optional("SOLANA_RPC_URL") ?? "https://api.devnet.solana.com",

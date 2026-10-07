@@ -21,7 +21,7 @@
 #    as dev, so `--omit=dev` drops it and the server dies with "tsx not found".
 services:
   - type: web
-    name: gochi-api
+    name: gochi-mobile
     runtime: node
     plan: free
     rootDir: .
@@ -46,12 +46,11 @@ services:
       - key: API_JWT_SECRET
         sync: false
 
-      # Privy. The App ID is public by design and ships in the APK; the secret
-      # must never carry the EXPO_PUBLIC_ prefix, which Expo inlines into the
-      # bundle where anyone unpacking the APK can read it.
+      # Privy. The App ID is public by design and ships in the APK, which is why
+      # the EXPO_PUBLIC_ prefix is correct here. There is no app secret: token
+      # verification checks the signature against Privy's published JWKS, so the
+      # server never makes an authenticated call and never needed one.
       - key: EXPO_PUBLIC_PRIVY_APP_ID
-        sync: false
-      - key: EXPO_PRIVATE_PRIVY_APP_SECRET
         sync: false
 
       # Solana. Writes stay on devnet: the companion mint is the only write, and
@@ -59,18 +58,27 @@ services:
       - key: SOLANA_RPC_URL
         value: https://api.devnet.solana.com
 
-      # Genesis Token and .skr resolve ONLY on mainnet. Pointed at devnet, every
-      # wallet reports as having no device — a confident wrong answer, not an
-      # error, which is the worst kind.
+      # Every READ, and it must be mainnet: the user's wallet history and token
+      # balances live there, and so do the Seeker Genesis Token and .skr records.
+      # Reading any of those from devnet returns confident wrong answers rather
+      # than errors. Helius rather than the public endpoint because the public one
+      # rate-limits and intermittently drops getSignaturesForAddress, which would
+      # leave the companion inert with no visible cause.
       - key: SOLANA_MAINNET_RPC_URL
-        sync: false
+        value: https://mainnet.helius-rpc.com/?api-key=d9c9b9c3-f9cb-4ee1-9e6d-6140666315f8
 
-      # Helius key, for the ingestion adapter and reliable mainnet reads.
+      # Helius dashboard key. NOT required for ingestion: activity is read through
+      # SOLANA_MAINNET_RPC_URL by the RPC adapter. This key only backs the webhook
+      # adapter, which is an unfinished stub and is never selected.
       - key: HELIUS_API_KEY
         sync: false
 
-      # The mint payer's keypair as base64, because a host has no keypair *file*.
-      # Populate with:  base64 -w0 /home/bigben/.config/solana/id.json
-      # Read by the mint module once the env-keypair path lands; harmless before.
+      # The mint payer's keypair as base64, because a host has no keypair *file*
+      # and baking one into an image would put a funded wallet into git history.
+      # A Solana keyfile is a JSON array of 64 bytes, so this is base64 of that
+      # JSON text — 300 characters, not 88. Generate with:
+      #   base64 -w0 /home/bigben/.config/solana/id.json
+      # Same value as in apps/api/.env. Without it, companion creation returns
+      # mint_unavailable.
       - key: PAYER_SECRET_KEY_BASE64
         sync: false

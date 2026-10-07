@@ -82,50 +82,43 @@ export type Umi = ReturnType<typeof createBaseUmi>;
  * configured with `base64 -w0 ~/.config/solana/id.json` gets the same array the
  * file would have parsed to.
  */
-function readPayerSecret(): Uint8Array | null {
+function readPayerSecret(): Uint8Array {
   const encoded = env.payerSecretKeyBase64;
-  if (encoded) {
-    let decoded: string;
-    try {
-      decoded = Buffer.from(encoded, "base64").toString("utf8");
-    } catch (error) {
-      throw new MintUnavailable("PAYER_SECRET_KEY_BASE64 is not valid base64.", {
-        cause: error,
-      });
-    }
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(decoded);
-    } catch (error) {
-      throw new MintUnavailable(
-        "PAYER_SECRET_KEY_BASE64 did not decode to a JSON keyfile. Produce it " +
-          "with: base64 -w0 <path-to-keyfile.json>",
-        { cause: error },
-      );
-    }
-
-    if (!Array.isArray(parsed) || parsed.length !== 64) {
-      throw new MintUnavailable(
-        "Payer keypair is not a 64-byte Solana keyfile.",
-      );
-    }
-    return Uint8Array.from(parsed as number[]);
-  }
-
-  const path = env.payerKeypairPath;
-  if (!path) return null;
-  if (!existsSync(path)) {
+  if (!encoded) {
     throw new MintUnavailable(
-      "Payer keypair not found at the configured path.",
+      "PAYER_SECRET_KEY_BASE64 is not set, so the API cannot pay for mints. " +
+        "Identity, the engine and every read route work without it. Generate " +
+        "one with: base64 -w0 ~/.config/solana/id.json",
     );
   }
 
-  const secret = JSON.parse(readFileSync(path, "utf8")) as number[];
-  if (!Array.isArray(secret) || secret.length !== 64) {
-    throw new MintUnavailable("Payer keypair is not a 64-byte Solana keyfile.");
+  let decoded: string;
+  try {
+    decoded = Buffer.from(encoded, "base64").toString("utf8");
+  } catch (error) {
+    throw new MintUnavailable("PAYER_SECRET_KEY_BASE64 is not valid base64.", {
+      cause: error,
+    });
   }
-  return Uint8Array.from(secret);
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(decoded);
+  } catch (error) {
+    throw new MintUnavailable(
+      "PAYER_SECRET_KEY_BASE64 did not decode to a JSON keyfile. A 44-character " +
+        "value here is usually a wallet *address* rather than the secret key: " +
+        "an address is public and cannot sign, so it cannot pay for a mint.",
+      { cause: error },
+    );
+  }
+
+  if (!Array.isArray(parsed) || parsed.length !== 64) {
+    throw new MintUnavailable(
+      "Payer keypair is not a 64-byte Solana keyfile.",
+    );
+  }
+  return Uint8Array.from(parsed as number[]);
 }
 
 let umiInstance: Umi | null = null;
@@ -146,25 +139,13 @@ export function getPayerUmi(): { umi: Umi; payer: Keypair } {
   /**
    * The payer keypair comes from one of two places, in order.
    *
-   * A hosted container has no keypair *file*, and shipping one in the image or
-   * the repo would put a funded wallet in git history. So the deployment path is
-   * `PAYER_SECRET_KEY_BASE64` — the same Solana keyfile, base64'd, supplied as an
-   * environment variable and decoded in memory. The bytes are never written to
-   * disk and never logged.
-   *
-   * The file path stays supported for local development, where a file is the
-   * natural thing to have and reading it keeps secrets out of shell history.
+   * A Solana keyfile on disk is the natural thing locally, but a hosted container
+   * has no such file, and shipping one inside an image would put a funded wallet
+   * into git history permanently. So there is one transport for both: the
+   * keyfile, base64'd, as `PAYER_SECRET_KEY_BASE64`, decoded in memory. The bytes
+   * are never written to disk and never logged.
    */
-  const secret = readPayerSecret();
-  if (!secret) {
-    throw new MintUnavailable(
-      "No mint payer configured. Set PAYER_SECRET_KEY_BASE64 on a host, or " +
-        "PAYER_KEYPAIR_PATH locally. Identity, the engine and every read route " +
-        "work without it.",
-    );
-  }
-
-  const keypair = Keypair.fromSecretKey(secret);
+  const keypair = Keypair.fromSecretKey(readPayerSecret());
 
   // web3jsEddsa signs through web3.js, and signerIdentity bridges the keypair into
   // umi's signer interface. `true` also sets the payer: a umi with an identity but

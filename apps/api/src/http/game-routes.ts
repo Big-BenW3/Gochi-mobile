@@ -106,14 +106,20 @@ async function ingestFromChain(userId: string): Promise<void> {
     .limit(1);
   const cursor = cursorRow?.lastSlot ?? null;
 
-  const adapter = env.heliusApiKey
-    ? new (await import("../ingestion/helius.js")).HeliusAdapter(
-        env.heliusApiKey,
-      )
-    : defaultRpcHistoryAdapter(env.solanaRpcUrl);
+  // Always the RPC adapter. It used to be chosen by `env.heliusApiKey`, which was a
+  // trap: `HeliusAdapter` is an unfinished stub whose `fetchRecent` returns `[]`,
+  // so the moment a Helius key was configured, ingestion silently produced zero
+  // events. No error, no log — the companion simply never reacted, which looks
+  // exactly like a broken product rather than a missing feature.
+  //
+  // Helius is still what we read *through*, via `SOLANA_MAINNET_RPC_URL`; the
+  // adapter is only about how results arrive, and polling is the one that works.
+  // A key's presence must never be able to select the non-functional path.
+  const rpcUrl = env.solanaMainnetRpcUrl;
+  const adapter = defaultRpcHistoryAdapter(rpcUrl);
 
   const raws = await adapter.fetchRecent(user.walletAddress, cursor, 50);
-  const network = env.solanaRpcUrl.includes("mainnet") ? "mainnet" : "devnet";
+  const network = rpcUrl.includes("mainnet") ? "mainnet" : "devnet";
 
   const orderedRaws = orderEvents(
     raws.map((raw) => ({ ...raw, timestamp: raw.blockTime ?? raw.ingestedAt })),
@@ -889,7 +895,10 @@ gameRoutes.get("/vault", async (c) => {
     // zeroes for a wallet that was never connected.
     const walletAddress = identity[0]?.walletAddress ?? null;
     const balances = walletAddress
-      ? await fetchTokenBalances(env.solanaRpcUrl, walletAddress)
+      // Mainnet, like every other read: the balances being shown are the ones in
+      // the user's real wallet. Read against devnet and the vault reports an
+      // empty account for a wallet that is full.
+      ? await fetchTokenBalances(env.solanaMainnetRpcUrl, walletAddress)
       : { available: false, tokens: [] };
 
     return c.json(

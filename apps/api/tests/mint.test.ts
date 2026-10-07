@@ -40,7 +40,7 @@ const OWNER = "4Nd1mBQtrMJVYVfKf2PJy9NZUZdTAsp7D4xWLs4gDB4T";
  * unfunded or unconfigured machine skips rather than fails.
  */
 const runIf =
-  Boolean(env.payerKeypairPath) && env.solanaRpcUrl.includes("devnet");
+  Boolean(env.payerSecretKeyBase64) && env.solanaRpcUrl.includes("devnet");
 
 afterAll(async () => {
   await closeDb();

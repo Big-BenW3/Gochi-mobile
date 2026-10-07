@@ -69,3 +69,6 @@ coverage/
 .zcode/
 # drizzle-kit local artefacts (migrations themselves are committed)
 apps/api/drizzle/meta/_journal.json.tmp
+
+# Local artifacts
+*.log

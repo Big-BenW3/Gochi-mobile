@@ -29,7 +29,7 @@ const WALLET = "4Nd1mBQtrMJVYVfKf2PJy9NZUZdTAsp7D4xWLs4gDB4T";
 
 /** A live mint needs a funded payer on devnet. */
 const runIf =
-  Boolean(env.payerKeypairPath) && env.solanaRpcUrl.includes("devnet");
+  Boolean(env.payerSecretKeyBase64) && env.solanaRpcUrl.includes("devnet");
 
 let auth = "";
 
