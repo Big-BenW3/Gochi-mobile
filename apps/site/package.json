@@ -16,16 +16,17 @@
     "@react-three/postprocessing": "^3.0.4",
     "gsap": "^3.12.5",
     "postprocessing": "^6.36.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
     "three": "^0.172.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
     "@types/three": "^0.172.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "playwright": "^1.64.0",
     "typescript": "~5.9.2",
     "vite": "^6.0.7"
   }
