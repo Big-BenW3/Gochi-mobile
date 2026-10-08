@@ -15,6 +15,56 @@
  *    radius as its counterpart there.
  */
 
+/* ---- fonts ---------------------------------------------------------------
+ *
+ * Self-hosted rather than loaded from a font CDN: no third-party request on the
+ * critical path, and no privacy leak on a page whose whole argument is that your
+ * wallet data stays yours. Same approach the reference site uses.
+ *
+ * These are the same OFL-licensed faces the mobile app ships, taken from
+ * @expo-google-fonts, so the site and the app are typographically identical.
+ *
+ * Known cost: these are TTF, not WOFF2. Manrope Regular is 95KB where the WOFF2
+ * is closer to 30KB. Converting needs fonttools (`pip install fonttools brotli`)
+ * or a CDN, which was not available while building. Total here is 400KB across
+ * four faces, preload covers only the two used above the fold.
+ *
+ * font-display: swap so text paints immediately with the fallback rather than
+ * waiting on a 95KB file.
+ */
+
+@font-face {
+  font-family: 'Manrope';
+  src: url('/fonts/Manrope-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Manrope';
+  src: url('/fonts/Manrope-SemiBold.ttf') format('truetype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Space Grotesk';
+  src: url('/fonts/SpaceGrotesk-SemiBold.ttf') format('truetype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/JetBrainsMono-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   /* ink — violet-tinted blacks, six steps */
   --ink-950: #05060d;
@@ -234,4 +284,22 @@ button {
 .page {
   position: relative;
   z-index: 1;
+}
+
+/* The download panel's reveal. Origin is set inline so it grows from the button. */
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Safe areas, for notched and gesture-bar devices. */
+.shell {
+  padding-left: max(var(--gutter), env(safe-area-inset-left));
+  padding-right: max(var(--gutter), env(safe-area-inset-right));
 }

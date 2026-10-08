@@ -2,7 +2,26 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover so the layout reaches under a notch on Android; the
+         header compensates with env(safe-area-inset-*). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+    <!-- Only the two faces used above the fold are preloaded. Preloading all
+         four would spend bandwidth on weights the first screen never renders. -->
+    <link
+      rel="preload"
+      href="/fonts/SpaceGrotesk-SemiBold.ttf"
+      as="font"
+      type="font/ttf"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/Manrope-Regular.ttf"
+      as="font"
+      type="font/ttf"
+      crossorigin
+    />
 
     <title>Gochi — a companion that reacts to your moves on Solana</title>
     <meta

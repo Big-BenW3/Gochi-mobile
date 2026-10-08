@@ -23,3 +23,7 @@ npm-debug.log*
 # Hosting
 .vercel
 .netlify
+# Built APK. Served from public/ but never committed: 105MB in git history is
+# unrecoverable and would be duplicated on every clone. Copy it in before a
+# release build — see docs/RELEASE.md.
+public/gochi.apk
