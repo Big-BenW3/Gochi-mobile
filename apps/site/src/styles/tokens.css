@@ -1,0 +1,237 @@
+/*
+ * Gochi — landing page tokens.
+ *
+ * These are the mobile app's tokens, copied from mobile/src/theme/tokens.ts. Not a
+ * new palette: a landing page that drifts from the product it sells is the first
+ * thing that reads as unfinished. When the app's palette changes, this changes.
+ *
+ * The app's own doctrine (design/DESIGN.md) is encoded here deliberately:
+ *
+ *  - "The companion is the brightest thing on the screen. Always." Hence one
+ *    emissive colour and a single bloom source. Nothing else glows.
+ *  - "Colour is a signal, not decoration." Gold (--reward) is spent only on
+ *    progression and the download affordance. It never becomes an accent.
+ *  - Shape tokens 12/16/20/999 mirror the app, so a control here has the same
+ *    radius as its counterpart there.
+ */
+
+:root {
+  /* ink — violet-tinted blacks, six steps */
+  --ink-950: #05060d;
+  --ink-900: #0a0c16;
+  --ink-850: #111426;
+  --ink-800: #1a1e33;
+  --ink-700: #262b44;
+  --ink-600: #343b58;
+
+  /* fog — one off-white, four opacities */
+  --fog-50: #edeff9;
+  --fog-200: #a8b0cc;
+  --fog-400: #666e8f;
+  --fog-600: #343b58;
+
+  /* brand */
+  --primary: #7a6bff;
+  --primary-lit: #a99bff;
+  --signal: #31d6ff;
+
+  /* semantics */
+  --damage: #ff5b6e;
+  --recover: #3ddc97;
+  --evolve: #ff6edb;
+  --reward: #ffc24b;
+
+  /* lines. Real borders, not glows. */
+  --hairline: rgba(237, 239, 249, 0.08);
+  --hairline-strong: rgba(237, 239, 249, 0.16);
+
+  /* type — matches the app: Space Grotesk display, Manrope body */
+  --font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-body: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+
+  /* shape */
+  --r-chip: 12px;
+  --r-control: 16px;
+  --r-card: 20px;
+  --r-pill: 999px;
+
+  /* layout */
+  --gutter: clamp(1.25rem, 4vw, 2.5rem);
+  --scene: 100svh;
+  --measure: 62ch;
+  --shell-max: 1280px;
+
+  /* motion — one duration set, matching the app */
+  --t-quick: 160ms;
+  --t-enter: 240ms;
+  --t-calm: 900ms;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  /* The 3D scene reads scroll progress from the real scroller, so nothing here
+     may create a scroll container of its own. */
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ink-950);
+  color: var(--fog-50);
+  font-family: var(--font-body);
+  font-size: clamp(1rem, 0.96rem + 0.2vw, 1.125rem);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.06;
+  margin: 0;
+  text-wrap: balance;
+}
+
+p {
+  margin: 0;
+  text-wrap: pretty;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+::selection {
+  background: var(--primary);
+  color: var(--ink-950);
+}
+
+/* ---- primitives ---------------------------------------------------------- */
+
+.shell {
+  width: 100%;
+  max-width: var(--shell-max);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+.scene-label {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fog-400);
+}
+
+.rule {
+  height: 1px;
+  background: var(--hairline);
+  border: 0;
+  margin: 0;
+}
+
+/*
+ * Squares and hairlines instead of pills and glass. The app reserves pills for
+ * things that genuinely float (design/DESIGN.md §5), so a pill here would mean
+ * "floating" and nothing on this page floats.
+ */
+.control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 44px;
+  padding: 0.65rem 1.15rem;
+  border-radius: var(--r-control);
+  border: 1px solid var(--hairline-strong);
+  background: var(--ink-850);
+  color: var(--fog-50);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  transition:
+    background var(--t-quick) var(--ease),
+    border-color var(--t-quick) var(--ease);
+}
+
+.control:hover {
+  background: var(--ink-800);
+  border-color: var(--fog-600);
+}
+
+.control[data-variant='primary'] {
+  background: var(--primary);
+  border-color: transparent;
+  color: var(--ink-950);
+  font-weight: 600;
+}
+
+.control[data-variant='primary']:hover {
+  background: var(--primary-lit);
+}
+
+/*
+ * The one place a surface is allowed to blur: the download panel, which must
+ * read as floating above the page it is anchored to. Everywhere else stays solid,
+ * because glass everywhere is the fastest way to look generic.
+ */
+.surface-float {
+  background: color-mix(in srgb, var(--ink-900) 82%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--r-card);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+/* ---- app frame ------------------------------------------------------------ */
+
+.stage {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.page {
+  position: relative;
+  z-index: 1;
+}

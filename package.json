@@ -26,7 +26,8 @@
     "typecheck": "npm run typecheck --workspace mobile",
     "site": "npm run dev --workspace @gochi/site",
     "site:build": "npm run build --workspace @gochi/site",
-    "site:typecheck": "npm run typecheck --workspace @gochi/site"
+    "site:typecheck": "npm run typecheck --workspace @gochi/site",
+    "site:preview": "npm run preview --workspace @gochi/site"
   },
   "engines": {
     "node": ">=20"
