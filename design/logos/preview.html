@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gochi — logo options</title>
+    <style>
+      /* The app's own tokens, so the logos are judged against the real product. */
+      :root {
+        --ink-950: #05060d;
+        --ink-900: #0a0c16;
+        --ink-850: #111426;
+        --ink-700: #262b44;
+        --fog-50: #edeff9;
+        --fog-200: #a8b0cc;
+        --fog-400: #666e8f;
+        --primary: #7a6bff;
+        --primary-lit: #a99bff;
+        --signal: #31d6ff;
+        --reward: #ffc24b;
+        --evolve: #ff6edb;
+        --hairline: rgba(237, 239, 249, 0.08);
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 3rem 1.5rem 5rem;
+        background: var(--ink-950);
+        color: var(--fog-50);
+        font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+        line-height: 1.6;
+      }
+
+      h1 { font-size: 1.5rem; font-weight: 600; margin: 0 0 0.35rem; letter-spacing: -0.02em; }
+      .sub { color: var(--fog-400); font-size: 0.9rem; margin: 0 0 3rem; }
+
+      .grid {
+        display: grid;
+        gap: 1.5rem;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        max-width: 1200px;
+      }
+
+      .card {
+        background: var(--ink-900);
+        border: 1px solid var(--hairline);
+        border-radius: 14px;
+        overflow: hidden;
+      }
+
+      .card img { display: block; width: 100%; height: auto; }
+
+      .meta { padding: 1.1rem 1.25rem 1.35rem; }
+      .num {
+        font-family: ui-monospace, Menlo, monospace;
+        font-size: 0.7rem;
+        color: var(--signal);
+        letter-spacing: 0.08em;
+      }
+      .name { font-size: 1.05rem; font-weight: 600; margin: 0.3rem 0 0.45rem; }
+      .note { color: var(--fog-400); font-size: 0.85rem; margin: 0 0 1rem; }
+
+      /* Small-size check, because most logos die at 16px in a tab bar. */
+      .sizes {
+        display: flex;
+        align-items: flex-end;
+        gap: 1.1rem;
+        padding-top: 0.9rem;
+        border-top: 1px solid var(--hairline);
+      }
+      .sizes figure { margin: 0; text-align: center; }
+      .sizes figcaption {
+        font-family: ui-monospace, Menlo, monospace;
+        font-size: 0.62rem;
+        color: var(--fog-400);
+        margin-top: 0.4rem;
+      }
+      .sizes img { display: block; }
+
+      .swatches { display: flex; gap: 0.4rem; margin-top: 1rem; }
+      .swatch { width: 22px; height: 22px; border-radius: 5px; border: 1px solid var(--hairline); }
+
+      .verdict {
+        max-width: 1200px;
+        margin: 3rem 0 0;
+        padding: 1.25rem 1.4rem;
+        background: var(--ink-850);
+        border: 1px solid var(--hairline);
+        border-left: 2px solid var(--primary);
+        border-radius: 10px;
+        font-size: 0.9rem;
+        color: var(--fog-200);
+      }
+      .verdict strong { color: var(--fog-50); }
+    </style>
+  </head>
+  <body>
+    <h1>Gochi — three logo options</h1>
+    <p class="sub">
+      Every colour is taken from <code>mobile/src/theme/tokens.ts</code>. Open this file
+      directly in a browser: <code>design/logos/preview.html</code>
+    </p>
+
+    <div class="grid">
+      <article class="card">
+        <img src="logo-1-signal.svg" alt="Logo 1 — Signal" />
+        <div class="meta">
+          <div class="num">01</div>
+          <p class="name">Signal</p>
+          <p class="note">
+            A single spark inside a soft aura. The most abstract of the three and the one
+            that holds together best at tiny sizes, so it doubles as the favicon.
+          </p>
+          <div class="sizes">
+            <figure><img src="logo-1-signal.svg" width="64" height="64" alt="" /><figcaption>64</figcaption></figure>
+            <figure><img src="logo-1-signal.svg" width="32" height="32" alt="" /><figcaption>32</figcaption></figure>
+            <figure><img src="logo-1-signal.svg" width="16" height="16" alt="" /><figcaption>16</figcaption></figure>
+          </div>
+        </div>
+      </article>
+
+      <article class="card">
+        <img src="logo-2-companion.svg" alt="Logo 2 — Companion" />
+        <div class="meta">
+          <div class="num">02</div>
+          <p class="name">Companion</p>
+          <p class="note">
+            The creature itself: two ears, a dome head, one continuous visor across both
+            eyes, a gold collar. Pairs directly with the 3D hero.
+          </p>
+          <div class="sizes">
+            <figure><img src="logo-2-companion.svg" width="64" height="64" alt="" /><figcaption>64</figcaption></figure>
+            <figure><img src="logo-2-companion.svg" width="32" height="32" alt="" /><figcaption>32</figcaption></figure>
+            <figure><img src="logo-2-companion.svg" width="16" height="16" alt="" /><figcaption>16</figcaption></figure>
+          </div>
+        </div>
+      </article>
+
+      <article class="card">
+        <img src="logo-3-core.svg" alt="Logo 3 — Core" />
+        <div class="meta">
+          <div class="num">03</div>
+          <p class="name">Core</p>
+          <p class="note">
+            Counter-rotating rings around a seeded core, with a transaction in orbit. Says
+            &ldquo;real onchain asset&rdquo; rather than &ldquo;cute mascot&rdquo;.
+          </p>
+          <div class="sizes">
+            <figure><img src="logo-3-core.svg" width="64" height="64" alt="" /><figcaption>64</figcaption></figure>
+            <figure><img src="logo-3-core.svg" width="32" height="32" alt="" /><figcaption>32</figcaption></figure>
+            <figure><img src="logo-3-core.svg" width="16" height="16" alt="" /><figcaption>16</figcaption></figure>
+          </div>
+        </div>
+      </article>
+    </div>
+
+    <p class="verdict">
+      <strong>Pick 02 if the hero leads with the creature</strong> — it is the same
+      silhouette the 3D model will be, so the mark and the bunny agree.
+      <strong>Pick 03 if the takeaway should be &ldquo;it is actually onchain&rdquo;</strong>
+      — it reads as an asset, not a mascot. <strong>Pick 01</strong> if you want the
+      least committal option that will not age badly.
+      <br /><br />
+      <span style="color: var(--fog-400);">
+        Check 16px honestly: that is the size that actually matters, and 03 loses its
+        orbiting nodes there while 02 loses ear definition.
+      </span>
+    </p>
+
+    <div class="swatches" style="max-width: 1200px">
+      <div class="swatch" style="background: #05060d" title="ink-950"></div>
+      <div class="swatch" style="background: #111426" title="ink-850"></div>
+      <div class="swatch" style="background: #7a6bff" title="primary"></div>
+      <div class="swatch" style="background: #31d6ff" title="signal"></div>
+      <div class="swatch" style="background: #ffc24b" title="reward"></div>
+      <div class="swatch" style="background: #ff6edb" title="evolve"></div>
+    </div>
+  </body>
+</html>
